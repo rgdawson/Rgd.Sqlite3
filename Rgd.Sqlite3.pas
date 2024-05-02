@@ -63,8 +63,8 @@ uses
   System.Classes,
   System.SysUtils,
   System.StrUtils,
-  Spring.Collections,
-  Rgd.FileUtils;
+  System.IOUtils,
+  System.Generics.Collections;
 
 {$ENDREGION}
 
@@ -334,7 +334,7 @@ type
   private
     FHandle: PSqlite3Stmt;
     [unsafe] FOwnerDatabase: ISqlite3Database;
-    FColumnLookup: IDictionary<string, integer>;
+    FColumnLookup: TDictionary<string, integer>;
     {Getters}
     function GetHandle: PSqlite3Stmt;
     function GetOwnerDatabase: ISqlite3Database;
@@ -689,7 +689,6 @@ var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
 begin
-  RenameAndDeleteFile('MPAT_Backup.db');
   TempDB := TSqlite3Database.Create;
   TempDB.Open(FileName, Flags);
   Backup := sqlite3_backup_init(TempDB.Handle, 'main', FHandle, 'main');
@@ -875,6 +874,7 @@ end;
 destructor TSQLite3Statement.Destroy;
 begin
   sqlite3_finalize(FHandle);
+  FColumnLookup.Free;
   inherited;
 end;
 
@@ -896,7 +896,7 @@ begin
   {Create ColumnIndex lookup dictionary...}
   if not assigned(FColumnLookup) then
   begin
-    FColumnLookup := TCollections.CreateDictionary<string, integer>;
+    FColumnLookup := TDictionary<string, integer>.Create;
     for i := 0 to SqlColumnCount-1 do
       FColumnLookup.Add(GetSqlColumn(i).ColName, i);
   end;

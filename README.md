@@ -3,9 +3,13 @@ Simple, effective Sqlite3 interface unit
 
   Rgd.SQLite3 for Delphi - A light-wieght SQlite3 interface
 
-  Credits: This unit borrows ideas from Yury Plashenkov in https://github.com/plashenkov/SQLite3-Delphi-FPC.
-           Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonomous methods, the ideas
-           for which I got by reading "Coding in Delphi" by Nick Hodges.
+Credits:
+
+This unit borrows ideas from Yury Plashenkov in https://github.com/plashenkov/SQLite3-Delphi-FPC,
+which I have always admired for its genius simplicity and clarity.  With Yuri's conepts in mind,
+Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonomous methods, the ideas
+for which I got by reading "Coding in Delphi" by Nick Hodges, plus some flexible goodies for
+binding and fetching data, and performing transactions.
 
 Query Patterns:
 
@@ -57,13 +61,13 @@ Create Datatabase pattern...
       {Create Table...}
       DB.Execute(
         ' CREATE TABLE Organizations ( ' +
-        '   Name                      TEXT,' +
-        '   Website                   TEXT,' +
-        '   Country                   TEXT,' +
-        '   Description               TEXT,' +
-        '   Founded                   TEXT,' +
-        '   Industry                  TEXT,' +
-        '   EmployeeCount             INTEGER,' +
+        '   Name               TEXT,' +
+        '   Website            TEXT,' +
+        '   Country            TEXT,' +
+        '   Description        TEXT,' +
+        '   Founded            TEXT,' +
+        '   Industry           TEXT,' +
+        '   EmployeeCount      INTEGER,' +
         ' PRIMARY KEY (Name ASC))' +
         ' WITHOUT ROWID');
     

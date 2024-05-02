@@ -34,6 +34,14 @@ object MainForm: TMainForm
     Height = 15
     Caption = 'Country'
   end
+  object Label1: TLabel
+    Left = 792
+    Top = 479
+    Width = 120
+    Height = 15
+    Alignment = taRightJustify
+    AutoSize = False
+  end
   object ListView1: TListView
     Left = 8
     Top = 39
@@ -41,6 +49,10 @@ object MainForm: TMainForm
     Height = 434
     Anchors = [akLeft, akTop, akRight, akBottom]
     Columns = <
+      item
+        Caption = 'Org ID'
+        Width = 0
+      end
       item
         Caption = 'Name'
         Width = 150
@@ -81,7 +93,6 @@ object MainForm: TMainForm
     Height = 49
     Anchors = [akLeft, akBottom]
     TabOrder = 1
-    ExplicitTop = 288
   end
   object btnClose: TButton
     Left = 837

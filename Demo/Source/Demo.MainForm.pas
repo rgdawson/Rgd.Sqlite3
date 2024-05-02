@@ -20,6 +20,7 @@ type
     Label3     : TLabel;
     ListView1  : TListView;
     Memo1      : TMemo;
+    Label1: TLabel;
     procedure ListView1SelectItem (Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure btnCloseClick       (Sender: TObject);
     procedure FormResize          (Sender: TObject);
@@ -93,6 +94,7 @@ begin
   {Create Table...}
   DB.Execute(
     ' CREATE TABLE Organizations ( ' +
+    '   OrgID                     TEXT,' +
     '   Name                      TEXT,' +
     '   Website                   TEXT,' +
     '   Country                   TEXT,' +
@@ -100,13 +102,14 @@ begin
     '   Founded                   TEXT,' +
     '   Industry                  TEXT,' +
     '   EmployeeCount             INTEGER,' +
-    ' PRIMARY KEY (Name ASC))' +
+    ' PRIMARY KEY (OrgID ASC))' +
     ' WITHOUT ROWID');
+  DB.Execute('CREATE INDEX idx_Name ON Organizations (Name)');
 
   Stmt_Description := DB.Prepare(
     'SELECT Description' +
     '  FROM Organizations' +
-    ' WHERE Name = ?', SQLITE_PREPARE_PERSISTENT);
+    ' WHERE OrgID = ?', SQLITE_PREPARE_PERSISTENT);
 end;
 
 procedure TMainForm.FillCountryCombo;
@@ -129,46 +132,53 @@ end;
 procedure TMainForm.LoadListView;
 var
   Item: TListItem;
+  StopWatch: TStopwatch;
 begin
+  StopWatch := TStopWatch.StartNew;
   ListView1.Clear;
   ListView1.Items.BeginUpdate;
   with DB.Prepare(
-    'SELECT Name, Website, Country, Industry, Founded, EmployeeCount' +
-    '  FROM Organizations') do Fetch(procedure
+      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
+      '  FROM Organizations' +
+      ' ORDER BY 2') do Fetch(procedure
   var i: integer;
   begin
     Item := ListView1.Items.Add;
     Item.Caption := SqlColumn[0].AsText;
-    for i := 1 to 6 do
+    for i := 1 to 7 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
   ListView1.Items.EndUpdate;
   ResizeColumns;
+  Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
 end;
 
 procedure TMainForm.LoadListView(Country: string);
 var
   Item: TListItem;
+  StopWatch: TStopwatch;
 begin
+  StopWatch := TStopWatch.StartNew;
   ListView1.Clear;
   ListView1.Items.BeginUpdate;
     with DB.Prepare(
-      'SELECT Name, Website, Country, Industry, Founded, EmployeeCount' +
+      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
       '  FROM Organizations' +
-      ' WHERE Country = ?', [QuotedStr(cbxCountry.Text)]) do
+      ' WHERE Country = ?' +
+      ' ORDER BY 2', [QuotedStr(cbxCountry.Text)]) do
     begin
-      SqlParam[1].BindText(Country);
-      Fetch(procedure
+      BindAndFetch([Country], procedure
         var i: integer;
         begin
           Item := ListView1.Items.Add;
           Item.Caption := SqlColumn[0].AsText;
-          for i := 1 to 6 do
+          for i := 1 to 7 do
             Item.SubItems.Add(SqlColumn[i].AsText);
         end);
     end;
   ListView1.Items.EndUpdate;
   ResizeColumns;
+  Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
 end;
 
 procedure TMainForm.ReadCsvIntoDatabase;
@@ -186,12 +196,12 @@ begin
     DB.Transaction(procedure
       var S: string;
       begin
-        with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?)') do
+        with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
         begin
           for S in Lines do
           begin
             Fields.CommaText := S;
-            BindAndStep([Fields[2], Fields[3], Fields[4], Fields[5], Fields[6], Fields[7], Fields[8]]);
+            BindAndStep([Fields[1], Fields[2], Fields[3], Fields[4], Fields[5], Fields[6], Fields[7], Fields[8]]);  {Ignoreing first column}
           end;
         end;
     end);
@@ -207,14 +217,14 @@ var
   FixedColWidth   : integer;
   AutoColumnWidth : integer;
 begin
-  FixedColWidth := ListView1.Columns[4].Width + ListView1.Columns[5].Width;
+  FixedColWidth := ListView1.Columns[5].Width + ListView1.Columns[6].Width;
   AutoColumnWidth := (ListView1.ClientWidth - FixedColWidth) div 4;
 
   ListView1.Items.BeginUpdate;
-  ListView1.Columns[0].Width := AutoColumnWidth;
   ListView1.Columns[1].Width := AutoColumnWidth;
   ListView1.Columns[2].Width := AutoColumnWidth;
-  ListView1.Columns[3].Width := ListView1.ClientWidth - FixedColWidth - AutoColumnWidth * 3;
+  ListView1.Columns[3].Width := AutoColumnWidth;
+  ListView1.Columns[4].Width := ListView1.ClientWidth - FixedColWidth - AutoColumnWidth * 3;
   ListView1.Items.EndUpdate;
 end;
 

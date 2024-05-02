@@ -726,7 +726,7 @@ var
   Stmt: ISqlite3Statement;
 begin
   Stmt := Prepare(SQL);
-  while Stmt.Step = SQLITE_ROW do
+  while Stmt = SQLITE_ROW do
     StmtProc(Stmt);
 end;
 
@@ -740,7 +740,7 @@ var
   Stmt: ISqlite3Statement;
 begin
   Stmt := Prepare(SQL);
-  if Stmt.Step = SQLITE_ROW then
+  if Stmt = SQLITE_ROW then
     StmtProc(Stmt);
 end;
 
@@ -1044,6 +1044,8 @@ end;
 function TSQLite3Statement.Step: integer;
 begin
   Result := sqlite3_step(FHandle);
+  if not (Result in [SQLITE_OK, SQLITE_DONE, SQLITE_ROW]) then
+    raise ESqliteError.Create(Format(SErrorMessage, [Result, UTF8ToString(sqlite3_errmsg(FOwnerDatabase.Handle))]), Result);
 end;
 
 function TSQLite3Statement.StepAndReset: integer;

@@ -366,7 +366,7 @@ function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external sqlit
 
 function sqlite3_exec(DB: PSqlite3; const SQL: PAnsiChar; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external sqlite3_lib;
 function sqlite3_prepare_v2(DB: PSqlite3; const zSql: PAnsiChar; nByte: integer; var ppStmt: PSqlite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_prepare_v3(DB: PSQLite3; const zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; var ppStmt: PSQLite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib;
+function sqlite3_prepare_v3(DB: PSQLite3; const zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; var ppStmt: PSQLite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
 function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external sqlite3_lib;

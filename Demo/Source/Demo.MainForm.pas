@@ -10,7 +10,8 @@ uses
   Vcl.Controls,
   Vcl.Forms,
   Vcl.ComCtrls,
-  Vcl.StdCtrls;
+  Vcl.StdCtrls,
+  Demo.SqliteInfoForm;
 
 type
   TMainForm = class(TForm)
@@ -21,11 +22,13 @@ type
     ListView1  : TListView;
     Memo1      : TMemo;
     Label1: TLabel;
+    Button1: TButton;
     procedure ListView1SelectItem (Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure btnCloseClick       (Sender: TObject);
     procedure FormResize          (Sender: TObject);
     procedure cbxCountryClick     (Sender: TObject);
     procedure FormShow(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
   private
     Stmt_Description: ISqlite3Statement;
     procedure CreateDatabase;
@@ -49,6 +52,15 @@ Implementation
 
 const
   ALL_COUNTRIES = '-- All Countries --';
+
+procedure TMainForm.Button1Click(Sender: TObject);
+begin
+  SqliteInfoForm.Memo1.Text := 'Version: ' + TSqlite3.GetSQLiteVersion + #13#10
+                               + 'Path: ' + TSqlite3.GetSqliteLibPath + #13#10
+                               + 'Compiled Options:' + #13#10
+                               + Trim(TSqlite3.GetSQLiteCompileOptions);
+  SqliteInfoForm.ShowModal;
+end;
 
 procedure TMainForm.cbxCountryClick(Sender: TObject);
 begin
@@ -109,7 +121,7 @@ begin
   Stmt_Description := DB.Prepare(
     'SELECT Description' +
     '  FROM Organizations' +
-    ' WHERE OrgID = ?', SQLITE_PREPARE_PERSISTENT);
+    ' WHERE OrgID = ?');
 end;
 
 procedure TMainForm.FillCountryCombo;

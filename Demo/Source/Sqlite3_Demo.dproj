@@ -4,7 +4,7 @@
         <ProjectVersion>20.1</ProjectVersion>
         <FrameworkType>VCL</FrameworkType>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Release</Config>
+        <Config Condition="'$(Config)'==''">Debug</Config>
         <Platform Condition="'$(Platform)'==''">Win32</Platform>
         <ProjectName Condition="'$(ProjectName)'==''">Sqlite3_Demo</ProjectName>
         <TargetedPlatforms>1</TargetedPlatforms>
@@ -131,6 +131,10 @@
             <FormType>dfm</FormType>
         </DCCReference>
         <DCCReference Include="..\..\Rgd.Sqlite3.pas"/>
+        <DCCReference Include="Demo.SqliteInfoForm.pas">
+            <Form>SqliteInfoForm</Form>
+            <FormType>dfm</FormType>
+        </DCCReference>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -157,14 +161,14 @@
                 </Excluded_Packages>
             </Delphi.Personality>
             <Deployment Version="4">
-                <DeployFile LocalName="..\Bin\Win64-Release\Sqlite3_Demo.exe" Configuration="Release" Class="ProjectOutput">
-                    <Platform Name="Win64">
+                <DeployFile LocalName="..\Bin\Win32-Debug\Sqlite3_Demo.exe" Configuration="Debug" Class="ProjectOutput">
+                    <Platform Name="Win32">
                         <RemoteName>Sqlite3_Demo.exe</RemoteName>
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
-                <DeployFile LocalName="Win32\Debug\Sqlite3_Demo.exe" Configuration="Debug" Class="ProjectOutput">
-                    <Platform Name="Win32">
+                <DeployFile LocalName="..\Bin\Win64-Release\Sqlite3_Demo.exe" Configuration="Release" Class="ProjectOutput">
+                    <Platform Name="Win64">
                         <RemoteName>Sqlite3_Demo.exe</RemoteName>
                         <Overwrite>true</Overwrite>
                     </Platform>

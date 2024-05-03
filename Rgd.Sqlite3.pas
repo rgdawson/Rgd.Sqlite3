@@ -879,9 +879,6 @@ begin
 end;
 
 procedure TSQLite3Statement.BindParams(const Params: array of const);
-{Remark: I may have had an issue with directly binding params to TVarRec.
- I refactored the BindParams function to assign TVarRec value to a local variable before binding.
- So far, have not seen the AV in ntdll.dll.}
 var
   i: integer;
   ParamInt: integer;
@@ -958,12 +955,6 @@ end;
 
 function TSQLite3Statement.BindAndStep(const Params: array of const): integer;
 begin
-  {Remark: Seems to me that when doing SELECT, you want to reset before stepping, because
-           you are never going to bind new parameters with resetting the Stmt.
-           When updating, I don't know if it matters, but Resetting after seems more common.
-           But the way I am doing it, If I reset after, then the reset ruins the Stmt state
-           for subsequent calls to column data in a select statement.  But this does cause an
-           unnecessary reset on a new Stmt.}
   BindParams(Params); {BindParams resets the statement before binding}
   Result := Step;
 end;

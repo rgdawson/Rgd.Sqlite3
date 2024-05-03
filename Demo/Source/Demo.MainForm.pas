@@ -144,8 +144,8 @@ begin
   var i: integer;
   begin
     Item := ListView1.Items.Add;
-    Item.Caption := SqlColumn[0].AsText;
-    for i := 1 to 7 do
+    Item.Caption   := SqlColumn[0].AsText;
+    for i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
   ListView1.Items.EndUpdate;
@@ -172,13 +172,13 @@ begin
         begin
           Item := ListView1.Items.Add;
           Item.Caption := SqlColumn[0].AsText;
-          for i := 1 to 7 do
+          for i := 1 to 6 do
             Item.SubItems.Add(SqlColumn[i].AsText);
         end);
     end;
   ListView1.Items.EndUpdate;
-  ResizeColumns;
   Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
+  ResizeColumns;
 end;
 
 procedure TMainForm.ReadCsvIntoDatabase;

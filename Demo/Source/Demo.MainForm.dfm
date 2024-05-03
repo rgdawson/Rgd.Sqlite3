@@ -40,6 +40,7 @@ object MainForm: TMainForm
     Width = 120
     Height = 15
     Alignment = taRightJustify
+    Anchors = [akRight, akBottom]
     AutoSize = False
   end
   object ListView1: TListView
@@ -95,10 +96,10 @@ object MainForm: TMainForm
     TabOrder = 1
   end
   object btnClose: TButton
-    Left = 837
+    Left = 816
     Top = 504
-    Width = 75
-    Height = 27
+    Width = 96
+    Height = 29
     Anchors = [akRight, akBottom]
     Caption = 'Close'
     TabOrder = 2

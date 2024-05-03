@@ -2,61 +2,9 @@ Unit Rgd.Sqlite3;
 
 Interface
 
-{$REGION ' Comments '}
-
-(***************************************************************************************************************
-  Rgd.SQLite3 for Delphi - A light-wieght SQlite3 interface
-
-  Credits: This unit borrows ideas from Yury Plashenkov in https://github.com/plashenkov/SQLite3-Delphi-FPC.
-           Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonomous methods, the ideas
-           for which I got by reading "Coding in Delphi" by Nick Hodges.
-
-  Query Patterns:
-
-    {Example Pattern 1 - Stmt := DB.Prepapre() and while Stmt.Step...}
-    var
-      Stmt: ISqlite3Statement;
-    begin
-      Stmt := DB.Prepare(
-        'SELECT Name,' +
-        '       ID' +
-        '  FROM Tasks');
-      while Stmt.Step = SQLITE_ROW do
-      being
-        S0 := Stmt.SqlColumn[0].AsText;
-        ID := Stmt.SqlColumn[1].AsInt;
-        {...}
-      end);
-    end;
-
-    {Pattern 2 - with DB.Prepare and Fetch(procedure)...}
-    with DB.Prepare(
-      'SELECT Name,' +
-      '       ID' +
-      '  FROM Tasks') do Fetch(procedure
-    begin
-      S0 := SqlColumn[0].AsText;
-      ID := SqlColumn[1].AsInt;
-      {...}
-    end);
-
-    {Pattern 3 - DB.Fetch(SQL, procedure(const Stmt: ISQlite3Statement)...}
-    DB.Fetch(
-      'SELECT Name,' +
-      '       ID'    +
-      '  FROM Tasks', procedure(const Stmt: ISQlite3Statement)
-    begin
-      S0 := Stmt.SqlColumn[0].AsText;
-      ID := Stmt.SqlColumn[1].AsInt;
-      {...}
-    end;
-
- ***************************************************************************************************************)
-
-{$ENDREGION}
-
 {$REGION ' Uses '}
 
+{.$DEFINE UseSpring4D}
 uses
   WinApi.Windows,
   System.Types,
@@ -64,11 +12,15 @@ uses
   System.SysUtils,
   System.StrUtils,
   System.IOUtils,
+  {$IFDEF UseSpring4D}
+  Spring.Collections;
+  {$ELSE}
   System.Generics.Collections;
+  {$ENDIF}
 
 {$ENDREGION}
 
-{$REGION ' Some Sqlite Constants and Types '}
+{$REGION ' Sqlite3.dll Constants and Types '}
 
 const
   {Return Values...}
@@ -107,17 +59,9 @@ const
   SQLITE_OPEN_NOFOLLOW       = $01000000;
 
   {SQL PrepFlags}
-
-  {The SQLITE_PREPARE_PERSISTENT flag is a hint to the query planner that the prepared statement will be retained
-   for a long time and probably reused many times. Without this flag, sqlite3_prepare_v3() and sqlite3_prepare16_v3()
-   assume that the prepared statement will be used just once or at most a few times and then destroyed using
-   sqlite3_finalize() relatively soon. The current implementation acts on this hint by avoiding the use of
-   lookaside memory so as not to deplete the limited store of lookaside memory.
-   Future versions of SQLite may act on this hint differently.}
-
   SQLITE_PREPARE_PERSISTENT = $01;
-  SQLITE_PREPARE_NORMALIZE  = $02; {No Used anymore, see documentation}
-  SQLITE_PREPARE_NO_VTAB    = $04; {Disallow virtual tables}
+  SQLITE_PREPARE_NORMALIZE  = $02;
+  SQLITE_PREPARE_NO_VTAB    = $04;
 
 type
   {Sqlite pointer types...}
@@ -137,17 +81,16 @@ type
     property ErrorCode: integer read FErrorCode write FErrorCode;
   end;
 
-type
-  {Forwards}
+  {Forwards...}
   ISqlite3Database    = interface;
   ISqlite3Statement   = interface;
   ISqlite3BlobHandler = interface;
 
-  {Procedure References}
+  {Procedure References...}
   TProc     = reference to procedure;
   TStmtProc = reference to procedure(const Stmt: ISqlite3Statement);
 
-  {General Global Sqlite functions}
+  {General Global Sqlite functions...}
   TSqlite3 = class
     class function GetSQLiteVersion: string;
     class function GetSQLiteCompileOptions: string;
@@ -156,7 +99,7 @@ type
     class function IsThreadSafe: Boolean;
   end;
 
-  {Column, Param Accessors}
+  {Column, Param Accessors...}
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
     FParamIndex: integer;
@@ -168,6 +111,7 @@ type
     procedure BindBlob(Data: Pointer; const Size: integer);
     procedure BindZeroBlob(const Size: integer);
   end;
+
   TSqlColumn = record
     [unsafe] FStmt: ISqlite3Statement;
     FColIndex: integer;
@@ -182,6 +126,7 @@ type
     function IsNull   : Boolean;
   end;
 
+  {ISqlite3* interfaces...}
   ISqlite3Database = interface
     ['{E6409C03-0409-46D3-99A6-7FCF27D72DF4}']
     {Getters...}
@@ -274,13 +219,7 @@ type
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
   end;
 
-{$REGION ' TSqlite3Database '}
-
-type
-
- (***********************************************************************
-  *  Implementations for ISqlite interfaces...
-  ***********************************************************************)
+  {TSqlite3* classes...}
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
   private
     FHandle: PSqlite3;
@@ -326,15 +265,15 @@ type
     destructor Destroy; override;
   end;
 
-{$ENDREGION}
-
-{$REGION ' TSqlite3Statement '}
-
   TSQLite3Statement = class(TInterfacedObject, ISqlite3Statement)
   private
     FHandle: PSqlite3Stmt;
     [unsafe] FOwnerDatabase: ISqlite3Database;
+    {$IFDEF UseSpring4D}
+    FColumnLookup: IDictionary<string, integer>;
+    {$ELSE}
     FColumnLookup: TDictionary<string, integer>;
+    {$ENDIF}
     {Getters}
     function GetHandle: PSqlite3Stmt;
     function GetOwnerDatabase: ISqlite3Database;
@@ -367,10 +306,6 @@ type
     destructor Destroy; override;
   end;
 
-{$ENDREGION}
-
-{$REGION ' TSqlite3BlobHandler '}
-
   TSqlite3BlobHandler = class(TInterfacedObject, ISqlite3BlobHandler)
   private
     FHandle: PSqlite3Blob;
@@ -386,8 +321,6 @@ type
     constructor Create(OwnerDatabase: ISqlite3Database; const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True);
     destructor Destroy; override;
   end;
-
-{$ENDREGION}
 
 var
   DB: ISqlite3Database;
@@ -726,7 +659,7 @@ var
   Stmt: ISqlite3Statement;
 begin
   Stmt := Prepare(SQL);
-  while Stmt = SQLITE_ROW do
+  while Stmt.Step = SQLITE_ROW do
     StmtProc(Stmt);
 end;
 
@@ -740,7 +673,7 @@ var
   Stmt: ISqlite3Statement;
 begin
   Stmt := Prepare(SQL);
-  if Stmt = SQLITE_ROW then
+  if Stmt.Step = SQLITE_ROW then
     StmtProc(Stmt);
 end;
 
@@ -874,7 +807,9 @@ end;
 destructor TSQLite3Statement.Destroy;
 begin
   sqlite3_finalize(FHandle);
+  {$IFNDEF UseSpring4D}
   FColumnLookup.Free;
+  {$ENDIF}
   inherited;
 end;
 
@@ -896,7 +831,11 @@ begin
   {Create ColumnIndex lookup dictionary...}
   if not assigned(FColumnLookup) then
   begin
+    {$IFDEF UseSpring4D}
+    FColumnLookup := TCollections.CreateDictionary<string, integer>;
+    {$ELSE}
     FColumnLookup := TDictionary<string, integer>.Create;
+    {$ENDIF}
     for i := 0 to SqlColumnCount-1 do
       FColumnLookup.Add(GetSqlColumn(i).ColName, i);
   end;
@@ -1044,6 +983,9 @@ end;
 function TSQLite3Statement.Step: integer;
 begin
   Result := sqlite3_step(FHandle);
+
+  {When updating, we could get a constraint error or something, so check result and throw an exception}
+  {TODO: Make a nicer error message}
   if not (Result in [SQLITE_OK, SQLITE_DONE, SQLITE_ROW]) then
     raise ESqliteError.Create(Format(SErrorMessage, [Result, UTF8ToString(sqlite3_errmsg(FOwnerDatabase.Handle))]), Result);
 end;
@@ -1053,7 +995,7 @@ begin
   Result := Step;
   Reset;
 end;
-//
+
 procedure TSQLite3Statement.Reset;
 begin
   sqlite3_reset(FHandle);

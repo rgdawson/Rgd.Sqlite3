@@ -114,8 +114,8 @@ end;
 
 procedure TMainForm.FillCountryCombo;
 begin
-  cbxCountry.Items.Clear;
   cbxCountry.Items.BeginUpdate;
+  cbxCountry.Items.Clear;
   cbxCountry.Items.Add(ALL_COUNTRIES);
 
   with DB.Prepare(
@@ -135,8 +135,8 @@ var
   StopWatch: TStopwatch;
 begin
   StopWatch := TStopWatch.StartNew;
-  ListView1.Clear;
   ListView1.Items.BeginUpdate;
+  ListView1.Clear;
   with DB.Prepare(
       'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
       '  FROM Organizations' +
@@ -159,8 +159,8 @@ var
   StopWatch: TStopwatch;
 begin
   StopWatch := TStopWatch.StartNew;
-  ListView1.Clear;
   ListView1.Items.BeginUpdate;
+  ListView1.Clear;
     with DB.Prepare(
       'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
       '  FROM Organizations' +

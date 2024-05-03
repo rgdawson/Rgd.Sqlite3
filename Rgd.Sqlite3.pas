@@ -1,5 +1,11 @@
 Unit Rgd.Sqlite3;
 
+{$IFDEF DEBUG}
+  {$ASSERTIONS ON}
+{$ELSE}
+  {$ASSERTIONS OFF}
+{$ENDIF}
+
 Interface
 
 {$REGION ' Uses '}
@@ -135,7 +141,7 @@ type
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     procedure CheckHandle;
-    procedure Check(const ErrCode: integer);
+    function Check(const ErrCode: integer): integer;
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = 0);
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
@@ -230,7 +236,7 @@ type
     function GetFilename: string;
     function GetTransactionOpen: Boolean;
     {Error Checking...}
-    procedure Check(const ErrCode: integer);
+    function Check(const ErrCode: integer): integer;
     procedure CheckHandle;
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = 0);
@@ -404,6 +410,9 @@ resourcestring
   STransactionAlreadyOpen = 'Transaction is already opened';
   SNoTransactionOpen      = 'No transaction is open';
   SColumnNameNotFound     = 'Column ''%s'' not found in columns:'#13#10'%s';
+  SParamCountMismatch     = 'Parameter Count Mismatch in BindParams';
+  STypeNotSupported       = 'VType %d not supported in BindParams()';
+  SImproperSQL            = 'Incorrect SQL for this function, must be SELECT COUNT()';
 
 constructor ESqliteError.Create(Msg: string; ErrorCode: integer);
 begin
@@ -559,9 +568,12 @@ begin
   inherited;
 end;
 
-procedure TSqlite3Database.Check(const ErrCode: integer);
+function TSqlite3Database.Check(const ErrCode: integer): integer;
 begin
-  if ErrCode <> SQLITE_OK then
+  Result := ErrCode;
+  if ErrCode in [SQLITE_OK, SQLITE_ROW, SQLITE_DONE] then
+    Result := ErrCode
+  else
     raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, UTF8ToString(sqlite3_errmsg(FHandle))]), ErrCode);
 end;
 
@@ -679,7 +691,7 @@ end;
 
 function TSqlite3Database.FetchCount(const SQL: string): integer;
 begin
-  Assert(ContainsText(SQL, 'SELECT Count('), 'Improper SQL for this function');
+  Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
   with Prepare(SQL) do
   begin
     Step;
@@ -887,9 +899,7 @@ var
   ParamString: string;
   ASqlParam: TSqlParam;
 begin
-  {$IFDEF DEBUG}
-  Assert(High(Params) = sqlite3_bind_parameter_count(FHandle)-1, 'Parameter Count Mismatch in BindParams');
-  {$ENDIF}
+  Assert(High(Params) = sqlite3_bind_parameter_count(FHandle)-1, SParamCountMismatch);
 
   {Reset and Bind all params...}
   Reset;
@@ -925,10 +935,10 @@ begin
       vtPointer:
         begin
           if Params[i].VPointer <> nil then
-            raise Exception.Create('VType vtPointer not supported in BindParams()');
+            raise Exception.CreateFmt(STypeNotSupported, [Params[i].VType]);
         end;
     else
-      raise Exception.CreateFmt('VType %d not supported in BindParams()', [Params[i].VType]);
+      raise Exception.CreateFmt(STypeNotSupported, [Params[i].VType]);
     end;
   end;
 end;
@@ -937,7 +947,8 @@ procedure TSQLite3Statement.BindParams(const Params: TArray<string>);
 var
   i: integer;
 begin
-  Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), 'Parameter Count Mismatch in BindParams');
+  Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
+
   Reset;
   for i := 0 to High(Params) do
     GetSqlParam(i+1).BindText(Params[i]);
@@ -947,7 +958,8 @@ procedure TSQLite3Statement.BindParams(const Params: TArray<integer>);
 var
   i: integer;
 begin
-  Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), 'Parameter Count Mismatch in BindParams');
+  Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
+
   Reset;
   for i := 0 to High(Params) do
     GetSqlParam(i+1).BindInt(Params[i]);
@@ -973,7 +985,7 @@ end;
 
 function TSQLite3Statement.Step: integer;
 begin
-  Result := sqlite3_step(FHandle);
+  Result := FOwnerDatabase.Check(sqlite3_step(FHandle));
 
   {When updating, we could get a constraint error or something, so check result and throw an exception}
   {TODO: Make a nicer error message}

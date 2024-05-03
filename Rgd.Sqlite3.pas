@@ -570,7 +570,6 @@ end;
 
 function TSqlite3Database.Check(const ErrCode: integer): integer;
 begin
-  Result := ErrCode;
   if ErrCode in [SQLITE_OK, SQLITE_ROW, SQLITE_DONE] then
     Result := ErrCode
   else

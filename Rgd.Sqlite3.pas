@@ -1,14 +1,19 @@
 Unit Rgd.Sqlite3;
 
-{Minimum version of Sqlite3 is 3.20 due to use of sqlite3_prepare_v3}
-
 {$IFDEF DEBUG}
   {$ASSERTIONS ON}
 {$ELSE}
   {$ASSERTIONS OFF}
 {$ENDIF}
 
+{.$DEFINE ColumnByName}
+{^ Define ColumnByName above to include code that allows you to specify column by name, i.e. SqlColumn['ColName']
+   A dictionary is used to quickly look column index by name.  I implemented this, but I never have found a need
+   to use column names and since it is slightly slower, I don't use it.}
+
 {.$DEFINE UseSpring4D}
+{^ Define UseSpring4D if you want to use Spring4D for the column index lookup dictionary,
+   otherwise System.Generics.TDictionary will be used. This option only applicable when ColumnByName is Defined}
 
 Interface
 
@@ -19,13 +24,14 @@ uses
   System.Types,
   System.Classes,
   System.SysUtils,
-  System.StrUtils,
-  System.IOUtils,
-  {$IFDEF UseSpring4D}
-  Spring.Collections;
-  {$ELSE}
-  System.Generics.Collections;
+  {$IFDEF ColumnByName}
+    {$IFDEF UseSpring4D}
+    Spring.Collections,
+    {$ELSE}
+    System.Generics.Collections,
+    {$ENDIF}
   {$ENDIF}
+  System.StrUtils;
 
 {$ENDREGION}
 
@@ -97,7 +103,7 @@ const
 
   {SQL PrepFlags}
   SQLITE_PREPARE_PERSISTENT = $01;
-  SQLITE_PREPARE_NORMALIZE  = $02;
+  SQLITE_PREPARE_NORMALIZE  = $02; {deprecated, no-op}
   SQLITE_PREPARE_NO_VTAB    = $04;
 
 type
@@ -129,6 +135,8 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
+    class var SqliteVersionStr: string;
+    class var PrepareV3Supported: Boolean;
     class function GetSQLiteVersion: string;
     class function GetSQLiteCompileOptions: string;
     class function GetSqliteLibPath: string;
@@ -214,7 +222,9 @@ type
     function GetSqlParam(const ParamIndex: integer): TSqlParam;
     function GetSqlParamByName(const ParamName: string): TSqlParam;
     function GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
+    {$IFDEF ColumnByName}
     function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
+    {$ENDIF}
     {Binding, Stepping...}
     procedure ClearBindings;
     procedure BindParams(const Params: array of const); overload;
@@ -238,8 +248,12 @@ type
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
     property SqlParam[const ParamIndex: integer]:     TSqlParam  read GetSqlParam;
     property SqlParamByName[const ParamName: string]: TSqlParam  read GetSqlParamByName;
+    {$IFDEF ColumnByName}
     property SqlColumn[const ColumnIndex: integer]:   TSqlColumn read GetSqlColumn; default; {Only the default property can be overloaded}
     property SqlColumn[const ColumnName: string]:     TSqlColumn read GetSqlColumnByName; default;
+    {$ELSE}
+    property SqlColumn[const ColumnIndex: integer]:   TSqlColumn read GetSqlColumn;
+    {$ENDIF}
   end;
 
   ISqlite3BlobHandler = interface
@@ -256,7 +270,7 @@ type
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
   end;
 
-  {TSqlite3* classes...}
+  {TSqlite3* classes implementing ISqlite3*...}
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
   private
     FHandle: PSqlite3;
@@ -306,19 +320,21 @@ type
   private
     FHandle: PSqlite3Stmt;
     [unsafe] FOwnerDatabase: ISqlite3Database;
-    {$IFDEF UseSpring4D}
-    FColumnLookup: IDictionary<string, integer>;
-    {$ELSE}
-    FColumnLookup: TDictionary<string, integer>;
+    {$IFDEF ColumnByName}
+      {$IFDEF UseSpring4D}
+      FColumnLookup: IDictionary<string, integer>;
+      {$ELSE}
+      FColumnLookup: TDictionary<string, integer>;
+      {$ENDIF}
+      function GetColumnIndex(Name: string): integer;
+      function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
     {$ENDIF}
     {Getters}
     function GetHandle: PSqlite3Stmt;
     function GetOwnerDatabase: ISqlite3Database;
-    function GetColumnIndex(Name: string): integer;
+    function GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
     function GetSqlParam(const ParamIndex: integer): TSqlParam;
     function GetSqlParamByName(const ParamName: string): TSqlParam;
-    function GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
-    function GetSqlColumnByName(const ColumnName: string):   TSqlColumn;
     {Binding, Stepping...}
     procedure ClearBindings;
     procedure BindParams(const Params: array of const); overload;
@@ -396,6 +412,7 @@ function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; 
 function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external sqlite3_lib delayed;
 
 function sqlite3_exec(DB: PSqlite3; const SQL: PAnsiChar; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_prepare_v2(DB: PSQLite3; const zSql: PAnsiChar; nByte: Integer; var ppStmt: PSQLite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_prepare_v3(DB: PSQLite3; const zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; var ppStmt: PSQLite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
@@ -455,8 +472,18 @@ end;
 {$REGION ' TSqlite3 Class Functions '}
 
 class function TSqlite3.GetSQLiteVersion: string;
+var
+  P1, P2: integer;
+  MinorVer: integer;
 begin
   Result := UTF8ToString(sqlite3_libversion);
+  SqliteVersionStr := Result;
+
+  {Extract Minor Version from Version String and check >= 20 for prepare_v3 support}
+  P1 := PosEx('.', SqliteVersionStr);
+  P2 := PosEx('.', SqliteVersionStr, P1+1);
+  MinorVer := Copy(SqliteVersionStr, P1+1, P2-P1-1).ToInteger;
+  PrepareV3Supported := MinorVer >= 20;
 end;
 
 class function TSqlite3.GetSQLiteCompileOptions: string;
@@ -467,8 +494,7 @@ var
 begin
   TempDB := TSqlite3.OpenDatabase(':memory:');
   Result := '';
-  with TempDB.Prepare(
-    'PRAGMA compile_options') do
+  with TempDB.Prepare('PRAGMA compile_options') do
   while Step = SQLITE_ROW do
     Result := Result + SqlColumn[0].AsText + CRLF;
 end;
@@ -590,6 +616,7 @@ constructor TSqlite3Database.Create;
 begin
   FHandle := nil;
   sqlite3_initialize;
+  TSqlite3.GetSQLiteVersion;
 end;
 
 destructor TSqlite3Database.Destroy;
@@ -834,20 +861,26 @@ end;
 
 {$ENDREGION}
 
-{$REGION ' TSqliteStatment '}
+{$REGION ' TSqlite3Statment '}
 
 constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = 0);
+{Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3}
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
+  if (PrepFlags = 0) or not(TSQlite3.PrepareV3Supported) then
+    FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, FHandle, nil))
+  else
+    FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
 end;
 
 destructor TSQLite3Statement.Destroy;
 begin
   sqlite3_finalize(FHandle);
-  {$IFNDEF UseSpring4D}
-  FColumnLookup.Free;
+  {$IFDEF ColumnByName}
+    {$IFNDEF UseSpring4D}
+    FColumnLookup.Free;
+    {$ENDIF}
   {$ENDIF}
   inherited;
 end;
@@ -862,6 +895,7 @@ begin
   Result := FOwnerDatabase;
 end;
 
+{$IFDEF ColumnByName}
 function TSQLite3Statement.GetColumnIndex(Name: string): integer;
 var
   i: integer;
@@ -887,6 +921,7 @@ begin
     raise ESqliteError.Create(Format(SColumnNameNotFound, [Name, S0]), 0);
   end;
 end;
+{$ENDIF}
 
 function TSQLite3Statement.GetSqlParam(const ParamIndex: integer): TSqlParam;
 begin
@@ -900,11 +935,13 @@ begin
   Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, PAnsiChar(UTF8Encode(ParamName)));
 end;
 
+{$IFDEF ColumnByName}
 function TSQLite3Statement.GetSqlColumnByName(const ColumnName: string): TSqlColumn;
 begin
   Result.FStmt := Self;
   Result.FColIndex := GetColumnIndex(ColumnName);
 end;
+{$ENDIF}
 
 function TSQLite3Statement.GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
 begin
@@ -1087,7 +1124,7 @@ end;
 
 {$ENDREGION}
 
-{$REGION ' TSqliteBlobHandler '}
+{$REGION ' TSqlite3BlobHandler '}
 
 constructor TSqlite3BlobHandler.Create(OwnerDatabase: ISqlite3Database; const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean);
 begin

@@ -185,6 +185,7 @@ type
     procedure Open(const FileName: string; Flags: integer = 0);
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Close;
+    procedure Close_v2;
     procedure Backup(const Filename: string; Flags: integer = 0);
     {Prepare...}
     function Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
@@ -286,6 +287,7 @@ type
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = 0);
     procedure Close;
+    procedure Close_v2;
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Backup(const Filename: string; Flags: integer = 0);
     {Prepare SQL...}
@@ -405,6 +407,7 @@ function sqlite3_threadsafe: Integer; cdecl; external sqlite3_lib delayed;
 
 function sqlite3_open(const FileName: PAnsiChar; var ppDb: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_open_v2(const FileName: PAnsiChar; var ppDb: PSqlite3; Flags: integer; const zVfs: PAnsiChar): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_close(DB: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_close_v2(DB: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 
 function sqlite3_backup_init(pDest: PSqlite3; const zDestName: PAnsiChar; pSource: PSqlite3; const zSourceName: PAnsiChar): PSqliteBackup; cdecl; external sqlite3_lib delayed;
@@ -702,12 +705,27 @@ procedure TSqlite3Database.Close;
 begin
   if Assigned(FHandle) then
   begin
-    {Rollback if transaction left open...}
+    {Rollback if transaction left open (sqlite will do this automatically, but we are doing it explcitly anyway)...}
     if FTransactionOpen then
       Rollback;
 
     {Close Database...}
-    sqlite3_close_v2(FHandle); {Note: close will not occur until/unless all statment handles are destroyed/finalized...}
+    Check(sqlite3_close(FHandle)); {Note: close will return SQLITE_BUSY if all statment handles are not aslready destroyed/finalized...}
+    FHandle := nil;
+    FFilename := '';
+  end;
+end;
+
+procedure TSqlite3Database.Close_v2;
+begin
+  if Assigned(FHandle) then
+  begin
+    {Rollback if transaction left open (sqlite will do this automatically, but we are doing it explcitly anyway)...}
+    if FTransactionOpen then
+      Rollback;
+
+    {Close Database...}
+    Check(sqlite3_close_v2(FHandle)); {Note: close_v2 will return SQLITE_OK, but will not occur until/unless all statment handles are destroyed/finalized...}
     FHandle := nil;
     FFilename := '';
   end;

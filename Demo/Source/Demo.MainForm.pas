@@ -78,7 +78,7 @@ end;
 
 procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
-  Stmt_Description := nil;
+  Stmt_Description := nil; {finalize/destroy Stmt_Description}
   DB.Close;
 end;
 

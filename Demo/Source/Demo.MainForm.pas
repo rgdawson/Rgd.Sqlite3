@@ -29,6 +29,7 @@ type
     procedure cbxCountryClick     (Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure Button1Click(Sender: TObject);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
   private
     Stmt_Description: ISqlite3Statement;
     procedure CreateDatabase;
@@ -38,7 +39,7 @@ type
     procedure ReadCsvIntoDatabase;
     procedure ResizeColumns;
   public
-
+    //
   end;
 
 var
@@ -73,6 +74,12 @@ end;
 procedure TMainForm.btnCloseClick(Sender: TObject);
 begin
   Close;
+end;
+
+procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  Stmt_Description := nil;
+  DB.Close;
 end;
 
 procedure TMainForm.FormResize(Sender: TObject);
@@ -121,7 +128,7 @@ begin
   Stmt_Description := DB.Prepare(
     'SELECT Description' +
     '  FROM Organizations' +
-    ' WHERE OrgID = ?');
+    ' WHERE OrgID = ?', SQLITE_PREPARE_PERSISTENT);
 end;
 
 procedure TMainForm.FillCountryCombo;

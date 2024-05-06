@@ -1,16 +1,19 @@
 Unit Rgd.Sqlite3;
 
+{Minimum version of Sqlite3 is 3.20 due to use of sqlite3_prepare_v3}
+
 {$IFDEF DEBUG}
   {$ASSERTIONS ON}
 {$ELSE}
   {$ASSERTIONS OFF}
 {$ENDIF}
 
+{.$DEFINE UseSpring4D}
+
 Interface
 
 {$REGION ' Uses '}
 
-{.$DEFINE UseSpring4D}
 uses
   WinApi.Windows,
   System.Types,
@@ -30,9 +33,37 @@ uses
 
 const
   {Return Values...}
-  SQLITE_OK   = 0;
-  SQLITE_ROW  = 100;
-  SQLITE_DONE = 101;
+  SQLITE_OK         = 0;
+  SQLITE_ERROR      = 1;
+  SQLITE_INTERNAL   = 2;
+  SQLITE_PERM       = 3;
+  SQLITE_ABORT      = 4;
+  SQLITE_BUSY       = 5;
+  SQLITE_LOCKED     = 6;
+  SQLITE_NOMEM      = 7;
+  SQLITE_READONLY   = 8;
+  SQLITE_INTERRUPT  = 9;
+  SQLITE_IOERR      = 10;
+  SQLITE_CORRUPT    = 11;
+  SQLITE_NOTFOUND   = 12;
+  SQLITE_FULL       = 13;
+  SQLITE_CANTOPEN   = 14;
+  SQLITE_PROTOCOL   = 15;
+  SQLITE_EMPTY      = 16;
+  SQLITE_SCHEMA     = 17;
+  SQLITE_TOOBIG     = 18;
+  SQLITE_CONSTRAINT = 19;
+  SQLITE_MISMATCH   = 20;
+  SQLITE_MISUSE     = 21;
+  SQLITE_NOLFS      = 22;
+  SQLITE_AUTH       = 23;
+  SQLITE_FORMAT     = 24;
+  SQLITE_RANGE      = 25;
+  SQLITE_NOTADB     = 26;
+  SQLITE_NOTICE     = 27;
+  SQLITE_WARNING    = 28;
+  SQLITE_ROW        = 100;
+  SQLITE_DONE       = 101;
 
   {Column Types...}
   SQLITE_INTEGER = 1;
@@ -351,54 +382,53 @@ type
   PSqliteBackup   = type Pointer;
   TDestructor     = procedure(p: Pointer); cdecl;
 
-function sqlite3_initialize: Integer; cdecl; external sqlite3_lib;
-function sqlite3_libversion: PAnsiChar; cdecl; external sqlite3_lib;
-function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; cdecl; external sqlite3_lib;
-function sqlite3_threadsafe: Integer; cdecl; external sqlite3_lib;
+function sqlite3_initialize: Integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_libversion: PAnsiChar; cdecl; external sqlite3_lib delayed;
+function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; cdecl; external sqlite3_lib delayed;
+function sqlite3_threadsafe: Integer; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_open(const FileName: PAnsiChar; var ppDb: PSqlite3): integer; cdecl; external sqlite3_lib;
-function sqlite3_open_v2(const FileName: PAnsiChar; var ppDb: PSqlite3; Flags: integer; const zVfs: PAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_close(DB: PSqlite3): integer; cdecl; external sqlite3_lib;
+function sqlite3_open(const FileName: PAnsiChar; var ppDb: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_open_v2(const FileName: PAnsiChar; var ppDb: PSqlite3; Flags: integer; const zVfs: PAnsiChar): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_close_v2(DB: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_backup_init(pDest: PSqlite3; const zDestName: PAnsiChar; pSource: PSqlite3; const zSourceName: PAnsiChar): PSqliteBackup; cdecl; external sqlite3_lib;
-function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external sqlite3_lib;
+function sqlite3_backup_init(pDest: PSqlite3; const zDestName: PAnsiChar; pSource: PSqlite3; const zSourceName: PAnsiChar): PSqliteBackup; cdecl; external sqlite3_lib delayed;
+function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_exec(DB: PSqlite3; const SQL: PAnsiChar; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_prepare_v2(DB: PSqlite3; const zSql: PAnsiChar; nByte: integer; var ppStmt: PSqlite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib;
+function sqlite3_exec(DB: PSqlite3; const SQL: PAnsiChar; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_prepare_v3(DB: PSQLite3; const zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; var ppStmt: PSQLite3Stmt; const pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
-function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external sqlite3_lib;
+function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_bind_parameter_count(pStmt: PSqlite3Stmt): Integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_parameter_index(pStmt: PSqlite3Stmt; const zName: PAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_blob(pStmt: PSqlite3Stmt; i: integer; const zData: Pointer; n: integer; xDel: TDestructor): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_double(pStmt: PSqlite3Stmt; i: integer; rValue: Double): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_int(pStmt: PSqlite3Stmt; i: integer; iValue: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_int64(pStmt: PSqlite3Stmt; i: integer; iValue: Int64): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_null(pStmt: PSqlite3Stmt; i: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_text(pStmt: PSqlite3Stmt; i: integer; const zData: PAnsiChar; n: integer; xDel: TDestructor): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_zeroblob(pStmt: PSqlite3Stmt; i: integer; n: integer): integer; cdecl; external sqlite3_lib;
+function sqlite3_bind_parameter_count(pStmt: PSqlite3Stmt): Integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_parameter_index(pStmt: PSqlite3Stmt; const zName: PAnsiChar): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_blob(pStmt: PSqlite3Stmt; i: integer; const zData: Pointer; n: integer; xDel: TDestructor): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_double(pStmt: PSqlite3Stmt; i: integer; rValue: Double): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_int(pStmt: PSqlite3Stmt; i: integer; iValue: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_int64(pStmt: PSqlite3Stmt; i: integer; iValue: Int64): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_null(pStmt: PSqlite3Stmt; i: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_text(pStmt: PSqlite3Stmt; i: integer; const zData: PAnsiChar; n: integer; xDel: TDestructor): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_bind_zeroblob(pStmt: PSqlite3Stmt; i: integer; n: integer): integer; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_clear_bindings(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_step(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
+function sqlite3_clear_bindings(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_step(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_column_blob(pStmt: PSqlite3Stmt; iCol: integer): Pointer; cdecl; external sqlite3_lib;
-function sqlite3_column_double(pStmt: PSqlite3Stmt; iCol: integer): Double; cdecl; external sqlite3_lib;
-function sqlite3_column_int(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_int64(pStmt: PSqlite3Stmt; iCol: integer): Int64; cdecl; external sqlite3_lib;
-function sqlite3_column_text(pStmt: PSqlite3Stmt; iCol: integer): PAnsiChar; cdecl; external sqlite3_lib;
-function sqlite3_column_bytes(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_type(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_count(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_name(pStmt: PSqlite3Stmt; n: integer): PAnsiChar; cdecl; external sqlite3_lib;
+function sqlite3_column_blob(pStmt: PSqlite3Stmt; iCol: integer): Pointer; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_double(pStmt: PSqlite3Stmt; iCol: integer): Double; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_int(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_int64(pStmt: PSqlite3Stmt; iCol: integer): Int64; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_text(pStmt: PSqlite3Stmt; iCol: integer): PAnsiChar; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_bytes(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_type(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_count(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_column_name(pStmt: PSqlite3Stmt; n: integer): PAnsiChar; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_blob_bytes(pBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_open(DB: PSqlite3; const zDb: PAnsiChar; const zTable: PAnsiChar; const zColumn: PAnsiChar; iRow: Int64; Flags: integer; var ppBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_close(pBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_read(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_write(pBlob: PSqlite3Blob; const Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external sqlite3_lib;
+function sqlite3_blob_bytes(pBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_blob_open(DB: PSqlite3; const zDb: PAnsiChar; const zTable: PAnsiChar; const zColumn: PAnsiChar; iRow: Int64; Flags: integer; var ppBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_blob_close(pBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_blob_read(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external sqlite3_lib delayed;
+function sqlite3_blob_write(pBlob: PSqlite3Blob; const Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external sqlite3_lib delayed;
 
 {$ENDREGION}
 
@@ -648,8 +678,9 @@ begin
     {Rollback if transaction left open...}
     if FTransactionOpen then
       Rollback;
+
     {Close Database...}
-    sqlite3_close(FHandle);
+    sqlite3_close_v2(FHandle); {Note: close will not occur until/unless all statment handles are destroyed/finalized...}
     FHandle := nil;
     FFilename := '';
   end;
@@ -809,10 +840,7 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  if PrepFlags = 0 then
-    FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, FHandle, nil))
-  else
-    FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil))
+  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
 end;
 
 destructor TSQLite3Statement.Destroy;

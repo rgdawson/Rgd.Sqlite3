@@ -12,6 +12,7 @@ object MainForm: TMainForm
   Font.Height = -12
   Font.Name = 'Segoe UI'
   Font.Style = []
+  OnClose = FormClose
   OnResize = FormResize
   OnShow = FormShow
   DesignSize = (
@@ -120,6 +121,7 @@ object MainForm: TMainForm
     Top = 504
     Width = 129
     Height = 29
+    Anchors = [akRight, akBottom]
     Caption = 'Sqlite3.dll Info'
     TabOrder = 4
     OnClick = Button1Click

@@ -29,7 +29,6 @@ type
     procedure cbxCountryClick     (Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure Button1Click(Sender: TObject);
-    procedure FormClose(Sender: TObject; var Action: TCloseAction);
   private
     Stmt_Description: ISqlite3Statement;
     procedure CreateDatabase;
@@ -74,12 +73,6 @@ end;
 procedure TMainForm.btnCloseClick(Sender: TObject);
 begin
   Close;
-end;
-
-procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
-begin
-  Stmt_Description := nil;
-  DB.Close;
 end;
 
 procedure TMainForm.FormResize(Sender: TObject);

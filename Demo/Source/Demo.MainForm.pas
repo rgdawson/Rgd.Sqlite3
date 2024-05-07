@@ -78,7 +78,7 @@ end;
 
 procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
-  Stmt_Description := nil; {finalize/destroy Stmt_Description}
+  Stmt_Description := nil;
   DB.Close;
 end;
 
@@ -124,11 +124,6 @@ begin
     ' PRIMARY KEY (OrgID ASC))' +
     ' WITHOUT ROWID');
   DB.Execute('CREATE INDEX idx_Name ON Organizations (Name)');
-
-  Stmt_Description := DB.Prepare(
-    'SELECT Description' +
-    '  FROM Organizations' +
-    ' WHERE OrgID = ?', SQLITE_PREPARE_PERSISTENT);
 end;
 
 procedure TMainForm.FillCountryCombo;
@@ -229,6 +224,11 @@ begin
     Lines.Free;
   end;
   DB.Execute('ANALYZE');
+  Stmt_Description := DB.Prepare(
+    'SELECT Description' +
+    '  FROM Organizations' +
+    ' WHERE OrgID = ?');
+
 end;
 
 procedure TMainForm.ResizeColumns;

@@ -178,6 +178,8 @@ type
     function GetHandle: PSqlite3;
     function GetFilename: string;
     function GetTransactionOpen: Boolean;
+    function GetStmtList: TList;
+    function GetBlobHandlerList: TList;
     {Error Checking...}
     procedure CheckHandle;
     function Check(const ErrCode: integer): integer;
@@ -185,7 +187,6 @@ type
     procedure Open(const FileName: string; Flags: integer = 0);
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Close;
-    procedure Close_v2;
     procedure Backup(const Filename: string; Flags: integer = 0);
     {Prepare...}
     function Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
@@ -277,17 +278,20 @@ type
     FHandle: PSqlite3;
     FFilename: string;
     FTransactionOpen: Boolean;
+    FStmtList: TList;
+    FBlobHandlerList: TList;
     {Getters...}
     function GetHandle: PSqlite3;
     function GetFilename: string;
     function GetTransactionOpen: Boolean;
+    function GetStmtList: TList;
+    function GetBlobHandlerList: TList;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     procedure CheckHandle;
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = 0);
     procedure Close;
-    procedure Close_v2;
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Backup(const Filename: string; Flags: integer = 0);
     {Prepare SQL...}
@@ -620,11 +624,15 @@ begin
   FHandle := nil;
   sqlite3_initialize;
   TSqlite3.GetSQLiteVersion;
+  FStmtList := TList.Create;
+  FBlobHandlerList := TList.Create;
 end;
 
 destructor TSqlite3Database.Destroy;
 begin
   Close;
+  FStmtList.Free;
+  FBlobHandlerList.Free;
   inherited;
 end;
 
@@ -655,6 +663,16 @@ end;
 function TSqlite3Database.GetTransactionOpen: Boolean;
 begin
   Result := FTransactionOpen;
+end;
+
+function TSqlite3Database.GetStmtList: TList;
+begin
+  Result := FStmtList;
+end;
+
+function TSqlite3Database.GetBlobHandlerList: TList;
+begin
+  Result := FBlobHandlerList;
 end;
 
 procedure TSqlite3Database.Open(const FileName: string; Flags: integer);
@@ -702,30 +720,33 @@ begin
 end;
 
 procedure TSqlite3Database.Close;
+var
+  i: integer;
+  Stmt: ISqlite3Statement;
+  BlobHandler: ISqlite3BlobHandler;
 begin
   if Assigned(FHandle) then
   begin
     {Rollback if transaction left open (sqlite will do this automatically, but we are doing it explcitly anyway)...}
     if FTransactionOpen then
       Rollback;
+
+    {Finalize any remaining Statement handles...}
+    for i := FStmtList.Count-1 downto 0 do
+    begin
+      Stmt := TSqlite3Statement(FStmtList[i]^) as ISQlite3Statement;
+      Stmt := nil;
+    end;
+
+    {Finalize any remaining Blob Handlers...}
+    for i := FBlobHandlerList.Count-1 downto 0 do
+    begin
+      BlobHandler := TSqlite3BlobHandler(FStmtList[i]^) as ISQlite3BlobHandler;
+      BlobHandler := nil;
+    end;
 
     {Close Database...}
     Check(sqlite3_close(FHandle)); {Note: close will return SQLITE_BUSY if all statment handles are not aslready destroyed/finalized...}
-    FHandle := nil;
-    FFilename := '';
-  end;
-end;
-
-procedure TSqlite3Database.Close_v2;
-begin
-  if Assigned(FHandle) then
-  begin
-    {Rollback if transaction left open (sqlite will do this automatically, but we are doing it explcitly anyway)...}
-    if FTransactionOpen then
-      Rollback;
-
-    {Close Database...}
-    Check(sqlite3_close_v2(FHandle)); {Note: close_v2 will return SQLITE_OK, but will not occur until/unless all statment handles are destroyed/finalized...}
     FHandle := nil;
     FFilename := '';
   end;
@@ -890,10 +911,12 @@ begin
     FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, FHandle, nil))
   else
     FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
+  FOwnerDatabase.GetStmtList.Add(Self);
 end;
 
 destructor TSQLite3Statement.Destroy;
 begin
+  FOwnerDatabase.GetStmtList.Remove(Self);
   sqlite3_finalize(FHandle);
   {$IFDEF ColumnByName}
     {$IFNDEF UseSpring4D}
@@ -1149,10 +1172,12 @@ begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PAnsiChar(UTF8Encode(Table)), PAnsiChar(UTF8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
+  FOwnerDatabase.GetBlobHandlerList.Add(Self);
 end;
 
 destructor TSqlite3BlobHandler.Destroy;
 begin
+  FOwnerDatabase.GetBlobHandlerList.Remove(Self);
   sqlite3_blob_close(FHandle);
   inherited;
 end;

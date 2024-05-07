@@ -406,7 +406,6 @@ function sqlite3_threadsafe: Integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_open(const FileName: PAnsiChar; var ppDb: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_open_v2(const FileName: PAnsiChar; var ppDb: PSqlite3; Flags: integer; const zVfs: PAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_close(DB: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
-function sqlite3_close_v2(DB: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 
 function sqlite3_backup_init(pDest: PSqlite3; const zDestName: PAnsiChar; pSource: PSqlite3; const zSourceName: PAnsiChar): PSqliteBackup; cdecl; external sqlite3_lib delayed;
 function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; external sqlite3_lib delayed;

@@ -12,7 +12,6 @@ object MainForm: TMainForm
   Font.Height = -12
   Font.Name = 'Segoe UI'
   Font.Style = []
-  OnClose = FormClose
   OnResize = FormResize
   OnShow = FormShow
   DesignSize = (

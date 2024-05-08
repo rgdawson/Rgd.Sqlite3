@@ -133,17 +133,6 @@ type
   TProc     = reference to procedure;
   TStmtProc = reference to procedure(const Stmt: ISqlite3Statement);
 
-  {General Global Sqlite functions...}
-  TSqlite3 = class
-    class var SqliteVersionStr: string;
-    class var PrepareV3Supported: Boolean;
-    class function GetSQLiteVersion: string;
-    class function GetSQLiteCompileOptions: string;
-    class function GetSqliteLibPath: string;
-    class function OpenDatabase(const FileName: string; Flags: integer = 0): ISqlite3Database;
-    class function IsThreadSafe: Boolean;
-  end;
-
   {Column, Param Accessors...}
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -156,7 +145,6 @@ type
     procedure BindBlob(Data: Pointer; const Size: integer);
     procedure BindZeroBlob(const Size: integer);
   end;
-
   TSqlColumn = record
     [unsafe] FStmt: ISqlite3Statement;
     FColIndex: integer;
@@ -375,6 +363,16 @@ type
     destructor Destroy; override;
   end;
 
+  {General Global Sqlite functions...}
+  TSqlite3 = class
+    class function GetSQLiteVersionStr: string;
+    class function GetSQLiteVersion: DWORD;
+    class function GetSQLiteCompileOptions: string;
+    class function GetSqliteLibPath: string;
+    class function OpenDatabase(const FileName: string; Flags: integer = 0): ISqlite3Database;
+    class function IsThreadSafe: Boolean;
+  end;
+
 var
   DB: ISqlite3Database;
 
@@ -390,6 +388,8 @@ const
   sqlite3_lib = 'Sqlite3.dll';
   SQLITE_TRANSIENT = Pointer(-1);
   SQL_NTS = -1;
+var
+  SQLITE3_VERSION: DWORD = 0; {Populated on DB.Create, holds Major=Hi(SQLITE3_VERSION), Minor=Lo(SQLITE3_VERSION)}
 
 type
   PPAnsiCharArray = ^TPAnsiCharArray;
@@ -465,59 +465,6 @@ constructor ESqliteError.Create(Msg: string; ErrorCode: integer);
 begin
   inherited Create(Msg);
   FErrorCode := ErrorCode;
-end;
-
-{$ENDREGION}
-
-{$REGION ' TSqlite3 Class Functions '}
-
-class function TSqlite3.GetSQLiteVersion: string;
-var
-  P1, P2: integer;
-  MinorVer: integer;
-begin
-  Result := UTF8ToString(sqlite3_libversion);
-  SqliteVersionStr := Result;
-
-  {Extract Minor Version from Version String and check >= 20 for prepare_v3 support}
-  P1 := PosEx('.', SqliteVersionStr);
-  P2 := PosEx('.', SqliteVersionStr, P1+1);
-  MinorVer := Copy(SqliteVersionStr, P1+1, P2-P1-1).ToInteger;
-  PrepareV3Supported := MinorVer >= 20;
-end;
-
-class function TSqlite3.GetSQLiteCompileOptions: string;
-const
-  CRLF = #13#10;
-var
-  TempDB: ISqlite3Database;
-begin
-  TempDB := TSqlite3.OpenDatabase(':memory:');
-  Result := '';
-  with TempDB.Prepare('PRAGMA compile_options') do
-  while Step = SQLITE_ROW do
-    Result := Result + SqlColumn[0].AsText + CRLF;
-end;
-
-class function TSqlite3.GetSqliteLibPath: string;
-var
-  L: Integer;
-begin
-  L := MAX_PATH + 1;
-  SetLength(Result, L);
-  L := GetModuleFileName(GetModuleHandle(sqlite3_lib), Pointer(Result), L);
-  SetLength(Result, L);
-end;
-
-class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer = 0): ISqlite3Database;
-begin
-  Result := TSqlite3Database.Create;
-  Result.Open(Filename, Flags);
-end;
-
-class function TSqlite3.IsThreadSafe: Boolean;
-begin
-  Result := sqlite3_threadsafe <> 0;
 end;
 
 {$ENDREGION}
@@ -616,7 +563,7 @@ constructor TSqlite3Database.Create;
 begin
   FHandle := nil;
   sqlite3_initialize;
-  TSqlite3.GetSQLiteVersion;
+  SQLITE3_VERSION := TSqlite3.GetSQLiteVersion;
 end;
 
 destructor TSqlite3Database.Destroy;
@@ -868,7 +815,7 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  if (PrepFlags = 0) or not(TSQlite3.PrepareV3Supported) then
+  if (PrepFlags <> 0) and (LoWord(SQLITE3_VERSION) >= 20) then
     FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, FHandle, nil))
   else
     FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
@@ -1162,6 +1109,69 @@ end;
 procedure TSqlite3BlobHandler.Write(Buffer: Pointer; const Size, Offset: integer);
 begin
   FOwnerDatabase.Check(sqlite3_blob_write(FHandle, Buffer, Size, Offset));
+end;
+
+{$ENDREGION}
+
+{$REGION ' TSqlite3 Class Functions '}
+
+class function TSqlite3.GetSQLiteVersionStr: string;
+begin
+  Result := UTF8ToString(sqlite3_libversion);
+end;
+
+class function TSqlite3.GetSQLiteVersion: DWORD;
+var
+  VerStr: string;
+  P1, P2: integer;
+  MajorVer: integer;
+  MinorVer: integer;
+begin
+  if SQLITE3_VERSION <> 0 then
+    Result := SQLITE3_VERSION
+  else
+  begin
+    VerStr := UTF8ToString(sqlite3_libversion);
+    P1 := PosEx('.', VerStr);
+    P2 := PosEx('.', VerStr, P1+1);
+    MajorVer := Copy(VerStr, 1, P1-1).ToInteger;
+    MinorVer := Copy(VerStr, P1+1, P2-P1-1).ToInteger;
+    Result := MinorVer and (MajorVer shl 16);
+  end;
+end;
+
+class function TSqlite3.GetSQLiteCompileOptions: string;
+const
+  CRLF = #13#10;
+var
+  TempDB: ISqlite3Database;
+begin
+  TempDB := TSqlite3.OpenDatabase(':memory:');
+  Result := '';
+  with TempDB.Prepare('PRAGMA compile_options') do
+  while Step = SQLITE_ROW do
+    Result := Result + SqlColumn[0].AsText + CRLF;
+end;
+
+class function TSqlite3.GetSqliteLibPath: string;
+var
+  L: Integer;
+begin
+  L := MAX_PATH + 1;
+  SetLength(Result, L);
+  L := GetModuleFileName(GetModuleHandle(sqlite3_lib), Pointer(Result), L);
+  SetLength(Result, L);
+end;
+
+class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer = 0): ISqlite3Database;
+begin
+  Result := TSqlite3Database.Create;
+  Result.Open(Filename, Flags);
+end;
+
+class function TSqlite3.IsThreadSafe: Boolean;
+begin
+  Result := sqlite3_threadsafe <> 0;
 end;
 
 {$ENDREGION}

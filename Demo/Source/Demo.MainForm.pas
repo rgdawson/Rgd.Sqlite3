@@ -55,7 +55,7 @@ const
 
 procedure TMainForm.Button1Click(Sender: TObject);
 begin
-  SqliteInfoForm.Memo1.Text := 'Version: ' + TSqlite3.GetSQLiteVersion + #13#10
+  SqliteInfoForm.Memo1.Text := 'Version: ' + TSqlite3.GetSQLiteVersionStr + #13#10
                                + 'Path: ' + TSqlite3.GetSqliteLibPath + #13#10
                                + 'Compiled Options:' + #13#10
                                + Trim(TSqlite3.GetSQLiteCompileOptions);
@@ -194,9 +194,9 @@ var
 begin
   Lines := TStringlist.Create;
   Fields := TStringlist.Create;
+  Fields.StrictDelimiter := True;
   try
     CreateDatabase;
-    Fields.StrictDelimiter := True;
     Lines.LoadFromFile('organizations-1000.csv');
     Lines.Delete(0); {Ignore Header}
 
@@ -208,7 +208,8 @@ begin
           for S in Lines do
           begin
             Fields.CommaText := S;
-            BindAndStep([Fields[1], Fields[2], Fields[3], Fields[4], Fields[5], Fields[6], Fields[7], Fields[8]]);  {Ignoreing first column}
+            Fields.Delete(0); {Ignoring first column in .csv}
+            BindAndStep(Fields.ToStringArray);
           end;
         end;
     end);
@@ -218,25 +219,22 @@ begin
   end;
   DB.Execute('ANALYZE');
   Stmt_Description := DB.Prepare(
-    'SELECT Description' +
+    'SELECT Description'   +
     '  FROM Organizations' +
-    ' WHERE OrgID = ?');
-
+    ' WHERE OrgID = ?', SQLITE_PREPARE_PERSISTENT);
 end;
 
 procedure TMainForm.ResizeColumns;
 var
-  FixedColWidth   : integer;
-  AutoColumnWidth : integer;
+  FixedWidth, AutoWidth : integer;
 begin
-  FixedColWidth := ListView1.Columns[5].Width + ListView1.Columns[6].Width;
-  AutoColumnWidth := (ListView1.ClientWidth - FixedColWidth) div 4;
-
+  FixedWidth := ListView1.Columns[5].Width + ListView1.Columns[6].Width;
+  AutoWidth := (ListView1.ClientWidth - FixedWidth) div 4;
   ListView1.Items.BeginUpdate;
-  ListView1.Columns[1].Width := AutoColumnWidth;
-  ListView1.Columns[2].Width := AutoColumnWidth;
-  ListView1.Columns[3].Width := AutoColumnWidth;
-  ListView1.Columns[4].Width := ListView1.ClientWidth - FixedColWidth - AutoColumnWidth * 3;
+  ListView1.Columns[1].Width := AutoWidth;
+  ListView1.Columns[2].Width := AutoWidth;
+  ListView1.Columns[3].Width := AutoWidth;
+  ListView1.Columns[4].Width := ListView1.ClientWidth - FixedWidth - AutoWidth * 3;
   ListView1.Items.EndUpdate;
 end;
 

@@ -222,6 +222,7 @@ type
     function  BindAndStep(const Params: TArray<integer>): integer; overload;
     function  Step: integer;
     function  StepAndReset: integer; overload;
+    //function  SqlStep: Boolean;
     {Fetching, Updating...}
     procedure Reset;
     procedure Fetch(StepProc: TProc);
@@ -978,11 +979,6 @@ end;
 function TSQLite3Statement.Step: integer;
 begin
   Result := FOwnerDatabase.Check(sqlite3_step(FHandle));
-
-  {When updating, we could get a constraint error or something, so check result and throw an exception}
-  {TODO: Make a nicer error message}
-  if not (Result in [SQLITE_OK, SQLITE_DONE, SQLITE_ROW]) then
-    raise ESqliteError.Create(Format(SErrorMessage, [Result, UTF8ToString(sqlite3_errmsg(FOwnerDatabase.Handle))]), Result);
 end;
 
 function TSQLite3Statement.StepAndReset: integer;
@@ -993,7 +989,7 @@ end;
 
 procedure TSQLite3Statement.Reset;
 begin
-  sqlite3_reset(FHandle);
+  FOwnerDatabase.Check(sqlite3_reset(FHandle));
 end;
 
 procedure TSQLite3Statement.Fetch(FetchProc: TProc);
@@ -1010,7 +1006,6 @@ end;
 
 procedure TSQLite3Statement.BindAndFetch(const Params: array of const; StepProc: TProc);
 begin
-  Reset;
   BindParams(Params);
   while Step = SQLITE_ROW do
     StepProc;
@@ -1018,7 +1013,6 @@ end;
 
 procedure TSQLite3Statement.BindAndFetchFirst(const Params: array of const; StepProc: TProc);
 begin
-  Reset;
   BindParams(Params);
   if Step = SQLITE_ROW then
     StepProc;

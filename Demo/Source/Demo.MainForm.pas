@@ -55,10 +55,11 @@ const
 
 procedure TMainForm.Button1Click(Sender: TObject);
 begin
-  SqliteInfoForm.Memo1.Text := 'Version: ' + TSqlite3.GetSQLiteVersionStr + #13#10
-                               + 'Path: ' + TSqlite3.GetSqliteLibPath + #13#10
-                               + 'Compiled Options:' + #13#10
-                               + Trim(TSqlite3.GetSQLiteCompileOptions);
+  SqliteInfoForm.Memo1.Text :=
+    'Version: ' + TSqlite3.GetSQLiteVersionStr + #13#10
+    + 'Path: ' + TSqlite3.GetSqliteLibPath + #13#10
+    + 'Compiled Options:' + #13#10
+    + Trim(TSqlite3.GetSQLiteCompileOptions);
   SqliteInfoForm.ShowModal;
 end;
 
@@ -130,6 +131,7 @@ begin
     '  FROM Organizations' +
     ' ORDER BY 1') do Fetch(procedure
   begin
+    //cbxCountry.Items.Add(SqlColumn['Country'].AsText);
     cbxCountry.Items.Add(SqlColumn[0].AsText);
   end);
 
@@ -144,17 +146,18 @@ begin
   StopWatch := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
+
   with DB.Prepare(
       'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
       '  FROM Organizations' +
       ' ORDER BY 2') do Fetch(procedure
-  var i: integer;
   begin
     Item := ListView1.Items.Add;
     Item.Caption   := SqlColumn[0].AsText;
-    for i := 1 to 6 do
+    for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
+
   ListView1.Items.EndUpdate;
   ResizeColumns;
   Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
@@ -168,21 +171,19 @@ begin
   StopWatch := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
-    with DB.Prepare(
-      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
-      '  FROM Organizations' +
-      ' WHERE Country = ?' +
-      ' ORDER BY 2', [QuotedStr(cbxCountry.Text)]) do
-    begin
-      BindAndFetch([Country], procedure
-        var i: integer;
-        begin
-          Item := ListView1.Items.Add;
-          Item.Caption := SqlColumn[0].AsText;
-          for i := 1 to 6 do
-            Item.SubItems.Add(SqlColumn[i].AsText);
-        end);
-    end;
+
+  with DB.Prepare(
+    'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
+    '  FROM Organizations' +
+    ' WHERE Country = ?' +
+    ' ORDER BY 2') do BindAndFetch([Country], procedure
+  begin
+    Item := ListView1.Items.Add;
+    Item.Caption := SqlColumn[0].AsText;
+    for var i := 1 to 6 do
+      Item.SubItems.Add(SqlColumn[i].AsText);
+  end);
+
   ListView1.Items.EndUpdate;
   Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
   ResizeColumns;
@@ -195,29 +196,32 @@ begin
   Lines := TStringlist.Create;
   Fields := TStringlist.Create;
   Fields.StrictDelimiter := True;
+
   try
     CreateDatabase;
     Lines.LoadFromFile('organizations-1000.csv');
     Lines.Delete(0); {Ignore Header}
 
     DB.Transaction(procedure
-      var S: string;
+    begin
+      with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
       begin
-        with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
+        for var S in Lines do
         begin
-          for S in Lines do
-          begin
-            Fields.CommaText := S;
-            Fields.Delete(0); {Ignoring first column in .csv}
-            BindAndStep(Fields.ToStringArray);
-          end;
+          Fields.CommaText := S;
+          Fields.Delete(0); {Ignore first column in our sample .csv}
+          BindAndStep(Fields.ToStringArray);
         end;
+      end;
     end);
+
   finally
     Fields.Free;
     Lines.Free;
   end;
+
   DB.Execute('ANALYZE');
+
   Stmt_Description := DB.Prepare(
     'SELECT Description'   +
     '  FROM Organizations' +

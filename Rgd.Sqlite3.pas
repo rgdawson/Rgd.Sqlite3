@@ -6,14 +6,10 @@ Unit Rgd.Sqlite3;
   {$ASSERTIONS OFF}
 {$ENDIF}
 
-{.$DEFINE ColumnByName}
-{^ Define ColumnByName above to include code that allows you to specify column by name, i.e. SqlColumn['ColName']
+{.$DEFINE ENABLE_COLUMNBYNAME}
+{^ Define ENABLE_COLUMNBYNAME above to include code that allows you to specify column by name, i.e. SqlColumn['ColName']
    A dictionary is used to quickly look column index by name.  I implemented this, but I never have found a need
    to use column names and since it is slightly slower, I don't use it.}
-
-{.$DEFINE UseSpring4D}
-{^ Define UseSpring4D if you want to use Spring4D for the column index lookup dictionary,
-   otherwise System.Generics.TDictionary will be used. This option only applicable when ColumnByName is Defined}
 
 Interface
 
@@ -24,12 +20,8 @@ uses
   System.Types,
   System.Classes,
   System.SysUtils,
-  {$IFDEF ColumnByName}
-    {$IFDEF UseSpring4D}
-    Spring.Collections,
-    {$ELSE}
-    System.Generics.Collections,
-    {$ENDIF}
+  {$IFDEF ENABLE_COLUMNBYNAME}
+  System.Generics.Collections,
   {$ENDIF}
   System.StrUtils;
 
@@ -209,7 +201,7 @@ type
     function GetSqlParam(const ParamIndex: integer): TSqlParam;
     function GetSqlParamByName(const ParamName: string): TSqlParam;
     function GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
-    {$IFDEF ColumnByName}
+    {$IFDEF ENABLE_COLUMNBYNAME}
     function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
     {$ENDIF}
     {Binding, Stepping...}
@@ -236,7 +228,7 @@ type
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
     property SqlParam[const ParamIndex: integer]:     TSqlParam  read GetSqlParam;
     property SqlParamByName[const ParamName: string]: TSqlParam  read GetSqlParamByName;
-    {$IFDEF ColumnByName}
+    {$IFDEF ENABLE_COLUMNBYNAME}
     property SqlColumn[const ColumnIndex: integer]:   TSqlColumn read GetSqlColumn; default; {Only the default property can be overloaded}
     property SqlColumn[const ColumnName: string]:     TSqlColumn read GetSqlColumnByName; default;
     {$ELSE}
@@ -308,14 +300,10 @@ type
   private
     FHandle: PSqlite3Stmt;
     [unsafe] FOwnerDatabase: ISqlite3Database;
-    {$IFDEF ColumnByName}
-      {$IFDEF UseSpring4D}
-      FColumnLookup: IDictionary<string, integer>;
-      {$ELSE}
-      FColumnLookup: TDictionary<string, integer>;
-      {$ENDIF}
-      function GetColumnIndex(Name: string): integer;
-      function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
+    {$IFDEF ENABLE_COLUMNBYNAME}
+    FColumnLookup: TDictionary<string, integer>;
+    function GetColumnIndex(Name: string): integer;
+    function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
     {$ENDIF}
     {Getters}
     function GetHandle: PSqlite3Stmt;
@@ -806,10 +794,8 @@ end;
 destructor TSQLite3Statement.Destroy;
 begin
   sqlite3_finalize(FHandle);
-  {$IFDEF ColumnByName}
-    {$IFNDEF UseSpring4D}
+  {$IFDEF ENABLE_COLUMNBYNAME}
     FColumnLookup.Free;
-    {$ENDIF}
   {$ENDIF}
   inherited;
 end;
@@ -824,7 +810,7 @@ begin
   Result := FOwnerDatabase;
 end;
 
-{$IFDEF ColumnByName}
+{$IFDEF ENABLE_COLUMNBYNAME}
 function TSQLite3Statement.GetColumnIndex(Name: string): integer;
 var
   i: integer;
@@ -864,7 +850,7 @@ begin
   Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, PAnsiChar(UTF8Encode(ParamName)));
 end;
 
-{$IFDEF ColumnByName}
+{$IFDEF ENABLE_COLUMNBYNAME}
 function TSQLite3Statement.GetSqlColumnByName(const ColumnName: string): TSqlColumn;
 begin
   Result.FStmt := Self;

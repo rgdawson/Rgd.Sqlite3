@@ -167,7 +167,6 @@ type
     function GetFilename: string;
     function GetTransactionOpen: Boolean;
     {Error Checking...}
-    procedure CheckHandle;
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = 0);
@@ -270,7 +269,6 @@ type
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
-    procedure CheckHandle;
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = 0);
     procedure Close;
@@ -298,6 +296,7 @@ type
     procedure Transaction(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
     {Blobs}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
+    property Handle: PSqlite3 read GetHandle write FHandle;
   public
     {Constructor/Destructor}
     constructor Create;
@@ -580,12 +579,6 @@ begin
     raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, UTF8ToString(sqlite3_errmsg(FHandle))]), ErrCode);
 end;
 
-procedure TSqlite3Database.CheckHandle;
-begin
-  if FHandle = nil then
-    raise ESqliteError.Create(SDatabaseNotConnected, -1);
-end;
-
 function TSqlite3Database.GetFilename: string;
 begin
   Result := FFilename;
@@ -593,6 +586,8 @@ end;
 
 function TSqlite3Database.GetHandle: PSqlite3;
 begin
+  if FHandle = nil then
+    raise ESqliteError.Create(SDatabaseNotConnected, -1);
   Result := FHandle;
 end;
 
@@ -626,7 +621,7 @@ begin
   TempDB := TSqlite3Database.Create;
   Open(':memory:');
   TempDB.Open(FileName, Flags);
-  Backup := sqlite3_backup_init(FHandle, 'main', TempDB.Handle, 'main');
+  Backup := sqlite3_backup_init(Handle, 'main', TempDB.Handle, 'main');
   sqlite3_backup_step(Backup, -1);
   sqlite3_backup_finish(Backup);
   TempDB.Close;
@@ -639,7 +634,7 @@ var
 begin
   TempDB := TSqlite3Database.Create;
   TempDB.Open(FileName, Flags);
-  Backup := sqlite3_backup_init(TempDB.Handle, 'main', FHandle, 'main');
+  Backup := sqlite3_backup_init(TempDB.Handle, 'main', Handle, 'main');
   sqlite3_backup_step(Backup, -1);
   sqlite3_backup_finish(Backup);
   TempDB.Close;
@@ -654,7 +649,7 @@ begin
       Rollback;
 
     {Close Database...}
-    Check(sqlite3_close(FHandle)); {Note: close will return SQLITE_BUSY if all statment handles are not aslready destroyed/finalized...}
+    Check(sqlite3_close(Handle)); {Note: close will return SQLITE_BUSY if all statment handles are not aslready destroyed/finalized...}
     FHandle := nil;
     FFilename := '';
   end;
@@ -710,8 +705,7 @@ end;
 
 procedure TSqlite3Database.Execute(const SQL: string);
 begin
-  CheckHandle;
-  Check(sqlite3_exec(FHandle, PAnsiChar(UTF8Encode(SQL)), nil, nil, nil));
+  Check(sqlite3_exec(Handle, PAnsiChar(UTF8Encode(SQL)), nil, nil, nil));
 end;
 
 procedure TSqlite3Database.Execute(const SQL: string; const FmtParams: array of const);
@@ -721,25 +715,17 @@ end;
 
 function TSqlite3Database.LastInsertRowID: Int64;
 begin
-  CheckHandle;
-  Result := sqlite3_last_insert_rowid(FHandle);
+  Result := sqlite3_last_insert_rowid(Handle);
 end;
 
 procedure TSqlite3Database.Transaction(Proc: TProc);
-var
-  DoTransaction: Boolean;
 begin
-  {DoTransaction flag should allow nested transaction to be ignored}
-  DoTransaction := not FTransactionOpen;
-  if DoTransaction then
-    BeginTransaction;
-
+  BeginTransaction;
   try
     Proc;
-    if DoTransaction then
-      Commit;
+    Commit;
   finally
-    if DoTransaction and FTransactionOpen then
+    if FTransactionOpen then
       Rollback;
   end;
 end;
@@ -747,18 +733,14 @@ end;
 procedure TSqlite3Database.Transaction(const SQL: string; StmtProc: TStmtProc);
 var
   Stmt: ISqlite3Statement;
-  DoTransaction: Boolean;
 begin
-  DoTransaction := not FTransactionOpen;
-  if DoTransaction then
-    BeginTransaction;
+  BeginTransaction;
   try
     Stmt := Self.Prepare(SQL);
     StmtProc(Stmt);
-    if DoTransaction then
-      Commit;
+    Commit;
   finally
-    if DoTransaction and FTransactionOpen then
+    if FTransactionOpen then
       Rollback;
   end;
 end;
@@ -814,7 +796,6 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 {Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3}
 begin
   FOwnerDatabase := OwnerDatabase;
-  FOwnerDatabase.CheckHandle;
   if (PrepFlags <> 0) and (LoWord(SQLITE3_VERSION) >= 20) then
     FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, FHandle, nil))
   else
@@ -1044,24 +1025,8 @@ begin
 end;
 
 procedure TSQLite3Statement.Transaction(UpdateProc: TProc);
-var
-  DoTransaction: Boolean;
 begin
-  {DoTransaction flag should allow nested transaction to be ignored}
-  DoTransaction := not FOwnerDatabase.TransactionOpen;
-  if DoTransaction then
-  begin
-    FOwnerDatabase.BeginTransaction;
-  end;
-
-  try
-    UpdateProc;
-    if DoTransaction then
-      FOwnerDatabase.Commit;
-  finally
-    if not(DoTransaction) and FOwnerDatabase.TransactionOpen then
-      FOwnerDatabase.Rollback;
-  end;
+  FOwnerDatabase.Transaction(UpdateProc);
 end;
 
 function TSQLite3Statement.SqlColumnCount: integer;
@@ -1076,7 +1041,6 @@ end;
 constructor TSqlite3BlobHandler.Create(OwnerDatabase: ISqlite3Database; const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean);
 begin
   FOwnerDatabase := OwnerDatabase;
-  FOwnerDatabase.CheckHandle;
   FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PAnsiChar(UTF8Encode(Table)), PAnsiChar(UTF8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
 end;
 

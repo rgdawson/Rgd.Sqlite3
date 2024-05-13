@@ -91,10 +91,12 @@ end;
 
 procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
 begin
-  with Stmt_Description do BindAndFetchFirst([Item.Caption], procedure
+  with Stmt_Description do
   begin
-    Memo1.Lines.Text := SqlColumn[0].AsText;
-  end);
+    BindParams([Item.Caption]);
+    if Step = SQLITE_ROW then
+      Memo1.Lines.Text := SqlColumn[0].AsText;
+  end;
 end;
 
 {$ENDREGION}
@@ -159,8 +161,8 @@ begin
   end);
 
   ListView1.Items.EndUpdate;
-  ResizeColumns;
   Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
+  ResizeColumns;
 end;
 
 procedure TMainForm.LoadListView(Country: string);
@@ -202,11 +204,11 @@ end;
 
 procedure TMainForm.ReadCsvIntoDatabase;
 var
-  Lines, Fields: TStringlist;
+  Lines, Values: TStringlist;
 begin
   Lines := TStringlist.Create;
-  Fields := TStringlist.Create;
-  Fields.StrictDelimiter := True;
+  Values := TStringlist.Create;
+  Values.StrictDelimiter := True;
 
   try
     CreateDatabase;
@@ -219,15 +221,15 @@ begin
       begin
         for var S in Lines do
         begin
-          Fields.CommaText := S;
-          Fields.Delete(0); {Ignore first column in our sample .csv}
-          BindAndStep(Fields.ToStringArray);
+          Values.CommaText := S;
+          Values.Delete(0); {Ignore first column in our sample .csv}
+          BindAndStep(Values.ToStringArray);
         end;
       end;
     end);
 
   finally
-    Fields.Free;
+    Values.Free;
     Lines.Free;
   end;
 

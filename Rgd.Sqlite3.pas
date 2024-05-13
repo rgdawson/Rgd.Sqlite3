@@ -87,6 +87,7 @@ const
   SQLITE_OPEN_PRIVATECACHE   = $00040000;
   SQLITE_OPEN_WAL            = $00080000;
   SQLITE_OPEN_NOFOLLOW       = $01000000;
+  SQLITE_OPEN_DEFAULT        = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE;
 
   {SQL PrepFlags}
   SQLITE_PREPARE_PERSISTENT = $01;
@@ -156,7 +157,7 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE);
+    procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Close;
     procedure Backup(const Filename: string; Flags: integer = 0);
@@ -167,19 +168,16 @@ type
     procedure BeginTransaction;
     procedure Commit;
     procedure Rollback;
+    procedure Transaction(Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
     function LastInsertRowID: Int64;
-    {Fetching, Updating...}
+    {Fetching...}
     procedure Fetch(const SQL: string; StmtProc: TStmtProc); overload;
     procedure Fetch(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
-    procedure FetchFirst(const SQL: string; StmtProc: TStmtProc);
     function  FetchCount(const SQL: string): integer; overload;
     function  FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
-    procedure Transaction(Proc: TProc); overload;
-    procedure Transaction(const SQL: string; StmtProc: TStmtProc); overload;
-    procedure Transaction(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
     {Blobs...}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
     {Properties...}
@@ -203,19 +201,14 @@ type
     procedure ClearBindings;
     procedure BindParams(const Params: array of const); overload;
     procedure BindParams(const Params: TArray<string>); overload;
-    procedure BindParams(const Params: TArray<integer>); overload;
-    function  BindAndStep(const Params: array of const): integer; overload;
-    function  BindAndStep(const Params: TArray<string>): integer; overload;
-    function  BindAndStep(const Params: TArray<integer>): integer; overload;
+    function BindAndStep(const Params: array of const): integer; overload;
+    function BindAndStep(const Params: TArray<string>): integer; overload;
     function  Step: integer;
     function  StepAndReset: integer; overload;
     {Fetching, Updating...}
     procedure Reset;
     procedure Fetch(StepProc: TProc);
-    procedure FetchFirst(StepProc: TProc);
     procedure BindAndFetch(const Params: array of const; StepProc: TProc);
-    procedure BindAndFetchFirst(const Params: array of const; StepProc: TProc);
-    procedure Transaction(UpdateProc: TProc);
     function SqlColumnCount: integer;
     {Properties...}
     property Handle: PSqlite3Stmt read GetHandle;
@@ -268,6 +261,7 @@ type
     procedure BeginTransaction;
     procedure Commit;
     procedure Rollback;
+    procedure Transaction(Proc: TProc); overload;
     {Execute}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
@@ -275,12 +269,8 @@ type
     {Fetch, Updating}
     procedure Fetch(const SQL: string; StmtProc: TStmtProc); overload;
     procedure Fetch(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
-    procedure FetchFirst(const SQL: string; StmtProc: TStmtProc);
     function FetchCount(const SQL: string): integer; overload;
     function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
-    procedure Transaction(Proc: TProc); overload;
-    procedure Transaction(const SQL: string; StmtProc: TStmtProc); overload;
-    procedure Transaction(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
     {Blobs}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
     property Handle: PSqlite3 read GetHandle write FHandle;
@@ -309,19 +299,14 @@ type
     procedure ClearBindings;
     procedure BindParams(const Params: array of const); overload;
     procedure BindParams(const Params: TArray<string>); overload;
-    procedure BindParams(const Params: TArray<integer>); overload;
     function BindAndStep(const Params: array of const): integer; overload;
     function BindAndStep(const Params: TArray<string>): integer; overload;
-    function BindAndStep(const Params: TArray<integer>): integer; overload;
     function Step: integer;
     function StepAndReset: integer; overload;
     {Fetching, Updating}
     procedure Reset;
     procedure Fetch(FetchProc: TProc);
-    procedure FetchFirst(FetchProc: TProc);
     procedure BindAndFetch(const Params: array of const; StepProc: TProc);
-    procedure BindAndFetchFirst(const Params: array of const; StepProc: TProc);
-    procedure Transaction(UpdateProc: TProc);
     function SqlColumnCount: integer;
   public
     {Constructor/Destructor}
@@ -347,12 +332,12 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
-    class function IsThreadSafe: Boolean;
-    class function GetSqliteLibPath: string;
-    class function GetSQLiteVersion: DWORD;
-    class function GetSQLiteVersionStr: string;
-    class function GetSQLiteCompileOptions: string;
-    class function OpenDatabase(const FileName: string; Flags: integer = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE): ISqlite3Database;
+    class function IsThreadSafe: Boolean; static;
+    class function GetSqliteLibPath: string; static;
+    class function GetSQLiteVersion: DWORD; static;
+    class function GetSQLiteVersionStr: string; static;
+    class function GetSQLiteCompileOptions: string; static;
+    class function OpenDatabase(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database; static;
   end;
 
 var
@@ -659,15 +644,6 @@ begin
   Fetch(Format(SQL, FmtParams), StmtProc);
 end;
 
-procedure TSqlite3Database.FetchFirst(const SQL: string; StmtProc: TStmtProc);
-var
-  Stmt: ISqlite3Statement;
-begin
-  Stmt := Prepare(SQL);
-  if Stmt.Step = SQLITE_ROW then
-    StmtProc(Stmt);
-end;
-
 function TSqlite3Database.FetchCount(const SQL: string): integer;
 begin
   Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
@@ -696,38 +672,6 @@ end;
 function TSqlite3Database.LastInsertRowID: Int64;
 begin
   Result := sqlite3_last_insert_rowid(Handle);
-end;
-
-procedure TSqlite3Database.Transaction(Proc: TProc);
-begin
-  BeginTransaction;
-  try
-    Proc;
-    Commit;
-  finally
-    if FTransactionOpen then
-      Rollback;
-  end;
-end;
-
-procedure TSqlite3Database.Transaction(const SQL: string; StmtProc: TStmtProc);
-var
-  Stmt: ISqlite3Statement;
-begin
-  BeginTransaction;
-  try
-    Stmt := Self.Prepare(SQL);
-    StmtProc(Stmt);
-    Commit;
-  finally
-    if FTransactionOpen then
-      Rollback;
-  end;
-end;
-
-procedure TSqlite3Database.Transaction(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc);
-begin
-  Transaction(Format(SQL, FmtParams), StmtProc);
 end;
 
 function TSqlite3Database.BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean): ISqlite3BlobHandler;
@@ -766,6 +710,18 @@ begin
   end
   else
     raise ESqliteError.Create(SNoTransactionOpen, -1);
+end;
+
+procedure TSqlite3Database.Transaction(Proc: TProc);
+begin
+  BeginTransaction;
+  try
+    Proc;
+    Commit;
+  finally
+    if FTransactionOpen then
+      Rollback;
+  end;
 end;
 
 {$ENDREGION}
@@ -918,17 +874,6 @@ begin
     GetSqlParam(i+1).BindText(Params[i]);
 end;
 
-procedure TSQLite3Statement.BindParams(const Params: TArray<integer>);
-var
-  i: integer;
-begin
-  Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
-
-  Reset;
-  for i := 0 to High(Params) do
-    GetSqlParam(i+1).BindInt(Params[i]);
-end;
-
 function TSQLite3Statement.BindAndStep(const Params: array of const): integer;
 begin
   BindParams(Params); {BindParams resets the statement before binding}
@@ -936,12 +881,6 @@ begin
 end;
 
 function TSQLite3Statement.BindAndStep(const Params: TArray<string>): integer;
-begin
-  BindParams(Params);
-  Result := Step;
-end;
-
-function TSQLite3Statement.BindAndStep(const Params: TArray<integer>): integer;
 begin
   BindParams(Params);
   Result := Step;
@@ -969,29 +908,11 @@ begin
     FetchProc;
 end;
 
-procedure TSQLite3Statement.FetchFirst(FetchProc: TProc);
-begin
-  if Step = SQLITE_ROW then
-    FetchProc;
-end;
-
 procedure TSQLite3Statement.BindAndFetch(const Params: array of const; StepProc: TProc);
 begin
   BindParams(Params);
   while Step = SQLITE_ROW do
     StepProc;
-end;
-
-procedure TSQLite3Statement.BindAndFetchFirst(const Params: array of const; StepProc: TProc);
-begin
-  BindParams(Params);
-  if Step = SQLITE_ROW then
-    StepProc;
-end;
-
-procedure TSQLite3Statement.Transaction(UpdateProc: TProc);
-begin
-  FOwnerDatabase.Transaction(UpdateProc);
 end;
 
 function TSQLite3Statement.SqlColumnCount: integer;
@@ -1092,7 +1013,7 @@ begin
   SetLength(Result, L);
 end;
 
-class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer): ISqlite3Database;
+class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
 begin
   Result := TSqlite3Database.Create;
   Result.Open(Filename, Flags);

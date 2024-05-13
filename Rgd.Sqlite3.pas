@@ -1,15 +1,10 @@
 Unit Rgd.Sqlite3;
 
-{$IFDEF DEBUG}
-  {$ASSERTIONS ON}
-{$ELSE}
-  {$ASSERTIONS OFF}
-{$ENDIF}
-
-{.$DEFINE ENABLE_COLUMNBYNAME}
-{^ Define ENABLE_COLUMNBYNAME above to include code that allows you to specify column by name, i.e. SqlColumn['ColName']
-   A dictionary is used to quickly look column index by name.  I implemented this, but I never have found a need
-   to use column names and since it is slightly slower, I don't use it.}
+{$DEFINE ENABLE_COLUMNBYNAME}
+{^ ENABLE_COLUMNBYNAME is defined above to include code that allows you to specify column by name, i.e. SqlColumn['ColName']
+   Sqlite does not have a native function this, so it is implemented as TDictionary to look up column index by name,
+   which adds to the exe size slightly.  This feature is not really needed, but some prefer using column names for readability.
+   If not wanted/needed, undefine for slightly smaller (~13K) exe size.}
 
 Interface
 
@@ -161,7 +156,7 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer = 0);
+    procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE);
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Close;
     procedure Backup(const Filename: string; Flags: integer = 0);
@@ -214,7 +209,6 @@ type
     function  BindAndStep(const Params: TArray<integer>): integer; overload;
     function  Step: integer;
     function  StepAndReset: integer; overload;
-    //function  SqlStep: Boolean;
     {Fetching, Updating...}
     procedure Reset;
     procedure Fetch(StepProc: TProc);
@@ -263,7 +257,7 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer = 0);
+    procedure Open(const FileName: string; Flags: integer);
     procedure Close;
     procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
     procedure Backup(const Filename: string; Flags: integer = 0);
@@ -353,18 +347,24 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
-    class function GetSQLiteVersionStr: string;
-    class function GetSQLiteVersion: DWORD;
-    class function GetSQLiteCompileOptions: string;
-    class function GetSqliteLibPath: string;
-    class function OpenDatabase(const FileName: string; Flags: integer = 0): ISqlite3Database;
     class function IsThreadSafe: Boolean;
+    class function GetSqliteLibPath: string;
+    class function GetSQLiteVersion: DWORD;
+    class function GetSQLiteVersionStr: string;
+    class function GetSQLiteCompileOptions: string;
+    class function OpenDatabase(const FileName: string; Flags: integer = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE): ISqlite3Database;
   end;
 
 var
   DB: ISqlite3Database;
 
 Implementation
+
+{$IFDEF DEBUG}
+  {$ASSERTIONS ON}
+{$ELSE}
+  {$ASSERTIONS OFF}
+{$ENDIF}
 
 {$REGION ' Sqlite DLL Api Externals '}
 
@@ -391,7 +391,6 @@ function sqlite3_libversion: PAnsiChar; cdecl; external sqlite3_lib delayed;
 function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; cdecl; external sqlite3_lib delayed;
 function sqlite3_threadsafe: Integer; cdecl; external sqlite3_lib delayed;
 
-function sqlite3_open(const FileName: PAnsiChar; var ppDb: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_open_v2(const FileName: PAnsiChar; var ppDb: PSqlite3; Flags: integer; const zVfs: PAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_close(DB: PSqlite3): integer; cdecl; external sqlite3_lib delayed;
 
@@ -588,27 +587,19 @@ end;
 procedure TSqlite3Database.Open(const FileName: string; Flags: integer);
 begin
   Close;
-  if Flags = 0 then
-    Check(sqlite3_open(PAnsiChar(UTF8Encode(FileName)), FHandle))
-  else
-    Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, Flags, nil));
-
-  if Assigned(FHandle) then
-  begin
-    FFilename := FileName;
-    {PRAGMAs...}
-    Self.Execute('PRAGMA foreign_keys = ON');
-  end;
+  Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, Flags, nil));
+  FFilename := FileName;
+  Self.Execute('PRAGMA foreign_keys = ON');
 end;
 
-procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer = 0);
+procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
 begin
   FFilename := FileName;
   TempDB := TSqlite3Database.Create;
-  Open(':memory:');
+  Open(':memory:', Flags);
   TempDB.Open(FileName, Flags);
   Backup := sqlite3_backup_init(Handle, 'main', TempDB.Handle, 'main');
   sqlite3_backup_step(Backup, -1);
@@ -795,7 +786,7 @@ destructor TSQLite3Statement.Destroy;
 begin
   sqlite3_finalize(FHandle);
   {$IFDEF ENABLE_COLUMNBYNAME}
-    FColumnLookup.Free;
+  FColumnLookup.Free;
   {$ENDIF}
   inherited;
 end;
@@ -819,11 +810,7 @@ begin
   {Create ColumnIndex lookup dictionary...}
   if not assigned(FColumnLookup) then
   begin
-    {$IFDEF UseSpring4D}
-    FColumnLookup := TCollections.CreateDictionary<string, integer>;
-    {$ELSE}
     FColumnLookup := TDictionary<string, integer>.Create;
-    {$ENDIF}
     for i := 0 to SqlColumnCount-1 do
       FColumnLookup.Add(GetSqlColumn(i).ColName, i);
   end;
@@ -835,6 +822,12 @@ begin
       S0 := S0 + '   ' + GetSqlColumn(i).ColName + #13#10;
     raise ESqliteError.Create(Format(SColumnNameNotFound, [Name, S0]), 0);
   end;
+end;
+
+function TSQLite3Statement.GetSqlColumnByName(const ColumnName: string): TSqlColumn;
+begin
+  Result.FStmt := Self;
+  Result.FColIndex := GetColumnIndex(ColumnName);
 end;
 {$ENDIF}
 
@@ -849,14 +842,6 @@ begin
   Result.FStmt := Self;
   Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, PAnsiChar(UTF8Encode(ParamName)));
 end;
-
-{$IFDEF ENABLE_COLUMNBYNAME}
-function TSQLite3Statement.GetSqlColumnByName(const ColumnName: string): TSqlColumn;
-begin
-  Result.FStmt := Self;
-  Result.FColIndex := GetColumnIndex(ColumnName);
-end;
-{$ENDIF}
 
 function TSQLite3Statement.GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
 begin
@@ -1107,7 +1092,7 @@ begin
   SetLength(Result, L);
 end;
 
-class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer = 0): ISqlite3Database;
+class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer): ISqlite3Database;
 begin
   Result := TSqlite3Database.Create;
   Result.Open(Filename, Flags);

@@ -179,9 +179,20 @@ begin
     ' ORDER BY 2') do BindAndFetch([Country], procedure
   begin
     Item := ListView1.Items.Add;
+
+    {Access columns by ordinal,}
     Item.Caption := SqlColumn[0].AsText;
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
+
+    {Alternatively, by name,}
+//    Item.Caption := SqlColumn['OrgID'].AsText;
+//    Item.SubItems.Add(SqlColumn['Name'].AsText);
+//    Item.SubItems.Add(SqlColumn['Website'].AsText);
+//    Item.SubItems.Add(SqlColumn['Country'].AsText);
+//    Item.SubItems.Add(SqlColumn['Industry'].AsText);
+//    Item.SubItems.Add(SqlColumn['Founded'].AsText);
+//    Item.SubItems.Add(SqlColumn['EmployeeCount'].AsText);
   end);
 
   ListView1.Items.EndUpdate;

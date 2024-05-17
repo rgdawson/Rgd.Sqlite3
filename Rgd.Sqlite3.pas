@@ -1,11 +1,5 @@
 Unit Rgd.Sqlite3;
 
-{.$DEFINE ENABLE_COLUMNBYNAME}
-{^ ENABLE_COLUMNBYNAME is defined above to include code that allows you to specify column by name, i.e. SqlColumn['ColName']
-   Sqlite does not have a native function this, so it is implemented as TDictionary to look up column index by name,
-   which adds to the exe size slightly.  This feature is not really needed, but some prefer using column names for readability.
-   If not wanted/needed, undefine for slightly smaller (~13-27K) exe size.}
-
 Interface
 
 {$REGION ' Uses '}
@@ -15,9 +9,6 @@ uses
   System.Types,
   System.Classes,
   System.SysUtils,
-  {$IFDEF ENABLE_COLUMNBYNAME}
-  System.Generics.Collections,
-  {$ENDIF}
   System.StrUtils;
 
 {$ENDREGION}
@@ -122,6 +113,15 @@ type
   TStmtProc = reference to procedure(const Stmt: ISqlite3Statement);
 
   {Column, Param Accessors...}
+
+  {Remark: TSqlParam and TSqlColumn are not intended to be declared as variables, rather, the intent is to be used
+           fluently, such as Stmt.SqlColumn[i].AsText.  Therefore, that would guarantee that FStmt does exist and
+           we can safely use the [unsafe] attribute, which can save a few milliseconds, when retrieving 1000's of
+           records.  So the only point of using [unsafe] is to save a few milliseconds, not to break any reference
+           cycle as is normally the reason for using the [unsafe]. In other words the [unsafe] is not necessary and
+           can be omitted if not comfortable with this approach. Btw, [weak] does not save the milliseconds so that
+           would be pointless.}
+
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
     FParamIndex: integer;
@@ -133,6 +133,7 @@ type
     procedure BindBlob(Data: Pointer; const Size: integer);
     procedure BindZeroBlob(const Size: integer);
   end;
+
   TSqlColumn = record
     [unsafe] FStmt: ISqlite3Statement;
     FColIndex: integer;
@@ -194,9 +195,6 @@ type
     function GetSqlParam(const ParamIndex: integer): TSqlParam;
     function GetSqlParamByName(const ParamName: string): TSqlParam;
     function GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
-    {$IFDEF ENABLE_COLUMNBYNAME}
-    function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
-    {$ENDIF}
     {Binding, Stepping...}
     procedure ClearBindings;
     procedure BindParams(const Params: array of const); overload;
@@ -213,12 +211,9 @@ type
     {Properties...}
     property Handle: PSqlite3Stmt read GetHandle;
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
-    property SqlParam[const ParamIndex: integer]: TSqlParam  read GetSqlParam;
-    property SqlParamByName[const ParamName: string]: TSqlParam  read GetSqlParamByName;
-    property SqlColumn[const ColumnIndex: integer]: TSqlColumn read GetSqlColumn; default;
-    {$IFDEF ENABLE_COLUMNBYNAME}
-    property SqlColumn[const ColumnName: string]: TSqlColumn read GetSqlColumnByName; default; {default property can be overloaded}
-    {$ENDIF}
+    property SqlParam[const ParamIndex: integer]: TSqlParam read GetSqlParam;
+    property SqlParamByName[const ParamName: string]: TSqlParam read GetSqlParamByName;
+    property SqlColumn[const ColumnIndex: integer]: TSqlColumn read GetSqlColumn;
   end;
 
   ISqlite3BlobHandler = interface
@@ -281,12 +276,7 @@ type
   TSQLite3Statement = class(TInterfacedObject, ISqlite3Statement)
   private
     FHandle: PSqlite3Stmt;
-    [unsafe] FOwnerDatabase: ISqlite3Database;
-    {$IFDEF ENABLE_COLUMNBYNAME}
-    FColumnLookup: TDictionary<string, integer>;
-    function GetColumnIndex(Name: string): integer;
-    function GetSqlColumnByName(const ColumnName: string): TSqlColumn;
-    {$ENDIF}
+    FOwnerDatabase: ISqlite3Database;
     {Getters}
     function GetHandle: PSqlite3Stmt;
     function GetOwnerDatabase: ISqlite3Database;
@@ -315,7 +305,7 @@ type
   TSqlite3BlobHandler = class(TInterfacedObject, ISqlite3BlobHandler)
   private
     FHandle: PSqlite3Blob;
-    [unsafe] FOwnerDatabase: ISqlite3Database;
+    FOwnerDatabase: ISqlite3Database;
     {Getters...}
     function GetHandle: PSqlite3Blob;
     function GetOwnerDatabase: ISqlite3Database;
@@ -343,12 +333,6 @@ var
 
 Implementation
 
-{$IFDEF DEBUG}
-  {$ASSERTIONS ON}
-{$ELSE}
-  {$ASSERTIONS OFF}
-{$ENDIF}
-
 {$REGION ' Sqlite DLL Api Externals '}
 
 (***********************************************************************
@@ -357,8 +341,8 @@ Implementation
  ***********************************************************************)
 const
   sqlite3_lib = 'Sqlite3.dll';
-  SQLITE_TRANSIENT = Pointer(-1);
   SQL_NTS = -1;
+  SQLITE_TRANSIENT = Pointer(-1);
 var
   SQLITE3_VERSION: DWORD = 0; {Populated on DB.Create, holds Major=Hi(SQLITE3_VERSION), Minor=Lo(SQLITE3_VERSION)}
 
@@ -367,7 +351,7 @@ type
   TPAnsiCharArray = array[0..MaxInt div SizeOf(PAnsiChar) - 1] of PAnsiChar;
   TSqliteCallback = function(pArg: Pointer; nCol: Integer; argv: PPAnsiCharArray; colv: PPAnsiCharArray): Integer; cdecl;
   PSqliteBackup   = type Pointer;
-  TDestructor     = procedure(p: Pointer); cdecl;
+  TDestructor  = procedure(p: Pointer); cdecl;
 
 function sqlite3_initialize: Integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_libversion: PAnsiChar; cdecl; external sqlite3_lib delayed;
@@ -739,9 +723,6 @@ end;
 destructor TSQLite3Statement.Destroy;
 begin
   sqlite3_finalize(FHandle);
-  {$IFDEF ENABLE_COLUMNBYNAME}
-  FColumnLookup.Free;
-  {$ENDIF}
   inherited;
 end;
 
@@ -754,36 +735,6 @@ function TSQLite3Statement.GetOwnerDatabase: ISqlite3Database;
 begin
   Result := FOwnerDatabase;
 end;
-
-{$IFDEF ENABLE_COLUMNBYNAME}
-function TSQLite3Statement.GetColumnIndex(Name: string): integer;
-var
-  i: integer;
-  S0: string;
-begin
-  {Create ColumnIndex lookup dictionary...}
-  if not assigned(FColumnLookup) then
-  begin
-    FColumnLookup := TDictionary<string, integer>.Create;
-    for i := 0 to SqlColumnCount-1 do
-      FColumnLookup.Add(GetSqlColumn(i).ColName, i);
-  end;
-
-  {Lookup ColumnIndex by ColumnName...}
-  if not FColumnLookup.TryGetValue(Name, Result) then
-  begin
-    for i := 0 to SqlColumnCount-1 do
-      S0 := S0 + '   ' + GetSqlColumn(i).ColName + #13#10;
-    raise ESqliteError.Create(Format(SColumnNameNotFound, [Name, S0]), 0);
-  end;
-end;
-
-function TSQLite3Statement.GetSqlColumnByName(const ColumnName: string): TSqlColumn;
-begin
-  Result.FStmt := Self;
-  Result.FColIndex := GetColumnIndex(ColumnName);
-end;
-{$ENDIF}
 
 function TSQLite3Statement.GetSqlParam(const ParamIndex: integer): TSqlParam;
 begin
@@ -867,6 +818,7 @@ var
 begin
   Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
 
+  {Reset and BindText all params...}
   Reset;
   for i := 0 to High(Params) do
     GetSqlParam(i+1).BindText(Params[i]);
@@ -874,7 +826,7 @@ end;
 
 function TSQLite3Statement.BindAndStep(const Params: array of const): integer;
 begin
-  BindParams(Params); {BindParams resets the statement before binding}
+  BindParams(Params);
   Result := Step;
 end;
 

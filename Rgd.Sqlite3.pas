@@ -159,9 +159,9 @@ type
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
     procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
-    procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
+    procedure OpenIntoMemory(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
     procedure Close;
-    procedure Backup(const Filename: string; Flags: integer = 0);
+    procedure Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
     {Prepare...}
     function Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
@@ -243,10 +243,10 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer);
+    procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
     procedure Close;
-    procedure OpenIntoMemory(const FileName: string; Flags: integer = 0);
-    procedure Backup(const Filename: string; Flags: integer = 0);
+    procedure OpenIntoMemory(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+    procedure Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
     {Prepare SQL...}
     function Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
@@ -551,7 +551,7 @@ begin
   Result := FTransactionOpen;
 end;
 
-procedure TSqlite3Database.Open(const FileName: string; Flags: integer);
+procedure TSqlite3Database.Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
 begin
   Close;
   Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, Flags, nil));
@@ -559,7 +559,7 @@ begin
   Self.Execute('PRAGMA foreign_keys = ON');
 end;
 
-procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer);
+procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
@@ -574,7 +574,7 @@ begin
   TempDB.Close;
 end;
 
-procedure TSqlite3Database.Backup(const Filename: string; Flags: integer = 0);
+procedure TSqlite3Database.Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;

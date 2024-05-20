@@ -81,6 +81,7 @@ const
   SQLITE_OPEN_DEFAULT        = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE;
 
   {SQL PrepFlags}
+  SQLITE_PREPARE_DEFAULT    = $00;
   SQLITE_PREPARE_PERSISTENT = $01;
   SQLITE_PREPARE_NORMALIZE  = $02; {deprecated, no-op}
   SQLITE_PREPARE_NO_VTAB    = $04;
@@ -163,8 +164,8 @@ type
     procedure Close;
     procedure Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
     {Prepare...}
-    function Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
-    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
     {Transactions...}
     procedure BeginTransaction;
     procedure Commit;
@@ -243,13 +244,13 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+    procedure Open(const FileName: string; Flags: integer);
     procedure Close;
-    procedure OpenIntoMemory(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
-    procedure Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+    procedure OpenIntoMemory(const FileName: string; Flags: integer);
+    procedure Backup(const Filename: string; Flags: integer);
     {Prepare SQL...}
-    function Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
-    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = 0): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement; overload;
     {Transactions...}
     procedure BeginTransaction;
     procedure Commit;
@@ -265,7 +266,7 @@ type
     function FetchCount(const SQL: string): integer; overload;
     function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs}
-    function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
+    function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean): ISqlite3BlobHandler;
     property Handle: PSqlite3 read GetHandle write FHandle;
   public
     {Constructor/Destructor...}
@@ -551,7 +552,7 @@ begin
   Result := FTransactionOpen;
 end;
 
-procedure TSqlite3Database.Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+procedure TSqlite3Database.Open(const FileName: string; Flags: integer);
 begin
   Close;
   Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, Flags, nil));
@@ -559,7 +560,7 @@ begin
   Self.Execute('PRAGMA foreign_keys = ON');
 end;
 
-procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
@@ -574,7 +575,7 @@ begin
   TempDB.Close;
 end;
 
-procedure TSqlite3Database.Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+procedure TSqlite3Database.Backup(const Filename: string; Flags: integer);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
@@ -602,21 +603,21 @@ begin
   end;
 end;
 
-function TSqlite3Database.Prepare(const SQL: string; PrepFlags: Cardinal = 0): ISqlite3Statement;
+function TSqlite3Database.Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement;
 begin
   Result := TSQLite3Statement.Create(Self, SQL, PrepFlags);
 end;
 
-function TSqlite3Database.Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = 0): ISqlite3Statement;
+function TSqlite3Database.Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement;
 begin
-  Result := Prepare(Format(SQL, FmtParams));
+  Result := Prepare(Format(SQL, FmtParams), PrepFlags);
 end;
 
 procedure TSqlite3Database.Fetch(const SQL: string; StmtProc: TStmtProc);
 var
   Stmt: ISqlite3Statement;
 begin
-  Stmt := Prepare(SQL);
+  Stmt := Prepare(SQL, SQLITE_PREPARE_DEFAULT);
   while Stmt.Step = SQLITE_ROW do
     StmtProc(Stmt);
 end;
@@ -629,7 +630,7 @@ end;
 function TSqlite3Database.FetchCount(const SQL: string): integer;
 begin
   Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
-  with Prepare(SQL) do
+  with Prepare(SQL, SQLITE_PREPARE_DEFAULT) do
   begin
     Step;
     Result := SqlColumn[0].AsInt;

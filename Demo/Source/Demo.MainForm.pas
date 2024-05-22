@@ -21,7 +21,6 @@ type
     Label3     : TLabel;
     ListView1  : TListView;
     Memo1      : TMemo;
-    Label1: TLabel;
     Button1: TButton;
     procedure ListView1SelectItem (Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure btnCloseClick       (Sender: TObject);
@@ -69,6 +68,7 @@ begin
     LoadListView
   else
     LoadListView(cbxCountry.Text);
+  Memo1.Lines.Clear;
 end;
 
 procedure TMainForm.btnCloseClick(Sender: TObject);
@@ -133,7 +133,6 @@ begin
     '  FROM Organizations' +
     ' ORDER BY 1') do Fetch(procedure
   begin
-    //cbxCountry.Items.Add(SqlColumn['Country'].AsText);
     cbxCountry.Items.Add(SqlColumn[0].AsText);
   end);
 
@@ -143,9 +142,7 @@ end;
 procedure TMainForm.LoadListView;
 var
   Item: TListItem;
-  StopWatch: TStopwatch;
 begin
-  StopWatch := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
 
@@ -161,16 +158,13 @@ begin
   end);
 
   ListView1.Items.EndUpdate;
-  Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
   ResizeColumns;
 end;
 
 procedure TMainForm.LoadListView(Country: string);
 var
   Item: TListItem;
-  StopWatch: TStopwatch;
 begin
-  StopWatch := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
 
@@ -181,15 +175,12 @@ begin
     ' ORDER BY 2') do BindAndFetch([Country], procedure
   begin
     Item := ListView1.Items.Add;
-
-    {Access columns by ordinal,}
     Item.Caption := SqlColumn[0].AsText;
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
 
   ListView1.Items.EndUpdate;
-  Label1.Caption := Format(' %d records, %dms', [ListView1.Items.Count, StopWatch.ElapsedMilliseconds]);
   ResizeColumns;
 end;
 

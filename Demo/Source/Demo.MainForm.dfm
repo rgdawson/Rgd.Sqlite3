@@ -34,15 +34,6 @@ object MainForm: TMainForm
     Height = 15
     Caption = 'Country'
   end
-  object Label1: TLabel
-    Left = 792
-    Top = 479
-    Width = 120
-    Height = 15
-    Alignment = taRightJustify
-    Anchors = [akRight, akBottom]
-    AutoSize = False
-  end
   object ListView1: TListView
     Left = 8
     Top = 39

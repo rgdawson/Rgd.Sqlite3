@@ -53,12 +53,14 @@ const
   ALL_COUNTRIES = '-- All Countries --';
 
 procedure TMainForm.Button1Click(Sender: TObject);
+const
+  CRLF = #13#10;
 begin
   SqliteInfoForm.Memo1.Text :=
-    'Version: ' + TSqlite3.GetSQLiteVersionStr + #13#10
-    + 'Path: ' + TSqlite3.GetSqliteLibPath + #13#10
-    + 'Compiled Options:' + #13#10
-    + Trim(TSqlite3.GetSQLiteCompileOptions);
+    'Version: ' + TSqlite3.GetSQLiteVersionStr + CRLF +
+    'Path: ' + TSqlite3.GetSqliteLibPath + CRLF +
+    'Compiled Options:' + CRLF +
+    Trim(TSqlite3.GetSQLiteCompileOptions);
   SqliteInfoForm.ShowModal;
 end;
 
@@ -109,7 +111,7 @@ begin
   {Create Table...}
   DB.Execute(
     ' CREATE TABLE Organizations ( ' +
-    '   OrgID                     TEXT,' +
+    '   OrgID                     TEXT NOT NULL,' +
     '   Name                      TEXT,' +
     '   Website                   TEXT,' +
     '   Country                   TEXT,' +
@@ -119,7 +121,6 @@ begin
     '   EmployeeCount             INTEGER,' +
     ' PRIMARY KEY (OrgID ASC))' +
     ' WITHOUT ROWID');
-  DB.Execute('CREATE INDEX idx_Name ON Organizations (Name)');
 end;
 
 procedure TMainForm.FillCountryCombo;
@@ -131,10 +132,9 @@ begin
   with DB.Prepare(
     'SELECT DISTINCT Country' +
     '  FROM Organizations' +
-    ' ORDER BY 1') do Fetch(procedure
-  begin
+    ' ORDER BY 1') do
+  while Step = SQLITE_ROW do
     cbxCountry.Items.Add(SqlColumn[0].AsText);
-  end);
 
   cbxCountry.Items.EndUpdate;
 end;

@@ -9,6 +9,7 @@ uses
   System.Types,
   System.Classes,
   System.SysUtils,
+  System.Diagnostics,
   Vcl.Dialogs,
   System.StrUtils;
 
@@ -160,10 +161,10 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
-    procedure OpenIntoMemory(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+    procedure Open(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT);
+    procedure OpenIntoMemory(const FileName: string);
     procedure Close;
-    procedure Backup(const Filename: string; Flags: integer = SQLITE_OPEN_DEFAULT);
+    procedure Backup(const Filename: string);
     {Prepare...}
     function Prepare(const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
@@ -245,10 +246,10 @@ type
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
     {Open/Close...}
-    procedure Open(const FileName: string; Flags: integer);
+    procedure Open(const FileName: string; OpenFlags: integer);
     procedure Close;
-    procedure OpenIntoMemory(const FileName: string; Flags: integer);
-    procedure Backup(const Filename: string; Flags: integer);
+    procedure OpenIntoMemory(const FileName: string);
+    procedure Backup(const Filename: string);
     {Prepare SQL...}
     function Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement; overload;
@@ -327,7 +328,7 @@ type
     class function GetSQLiteVersion: DWORD; static;
     class function GetSQLiteVersionStr: string; static;
     class function GetSQLiteCompileOptions: string; static;
-    class function OpenDatabase(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database; static;
+    class function OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database; static;
   end;
 
 var
@@ -554,40 +555,50 @@ begin
   Result := FTransactionOpen;
 end;
 
-procedure TSqlite3Database.Open(const FileName: string; Flags: integer);
+procedure TSqlite3Database.Open(const FileName: string; OpenFlags: integer);
 begin
   Close;
-  Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, Flags, nil));
+  Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, OpenFlags, nil));
   FFilename := FileName;
   Self.Execute('PRAGMA foreign_keys = ON');
 end;
 
-procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Flags: integer);
+procedure TSqlite3Database.OpenIntoMemory(const FileName: string);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
 begin
-  FFilename := FileName;
   TempDB := TSqlite3Database.Create;
-  Open(':memory:', Flags);
-  TempDB.Open(FileName, Flags);
+  Open(':memory:', SQLITE_OPEN_DEFAULT);
+  FFilename := FileName;
+  TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
   Backup := sqlite3_backup_init(Handle, 'main', TempDB.Handle, 'main');
   sqlite3_backup_step(Backup, -1);
   sqlite3_backup_finish(Backup);
   TempDB.Close;
 end;
 
-procedure TSqlite3Database.Backup(const Filename: string; Flags: integer);
+procedure TSqlite3Database.Backup(const Filename: string);
+{Remark: Another way to backup a database is
+           ==> Execute('VACUUM INTO %s', [QuotedStr(Filename)]);
+         which was introduced in Sqlite3 version 3.27.0
+         VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
 begin
-  TempDB := TSqlite3Database.Create;
-  TempDB.Open(FileName, Flags);
-  Backup := sqlite3_backup_init(TempDB.Handle, 'main', Handle, 'main');
-  sqlite3_backup_step(Backup, -1);
-  sqlite3_backup_finish(Backup);
-  TempDB.Close;
+  DeleteFile(Filename);
+  if LoWord(SQLITE3_VERSION) >= 27 then
+    Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
+  else
+  begin
+    TempDB := TSqlite3Database.Create;
+    TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
+    Backup := sqlite3_backup_init(TempDB.Handle, 'main', Handle, 'main');
+    Check(sqlite3_backup_step(Backup, -1));
+    Check(sqlite3_backup_finish(Backup));
+    TempDB.Close;
+  end;
 end;
 
 procedure TSqlite3Database.Close;
@@ -971,10 +982,10 @@ begin
   SetLength(Result, L);
 end;
 
-class function TSqlite3.OpenDatabase(const FileName: string; Flags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
+class function TSqlite3.OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
 begin
   Result := TSqlite3Database.Create;
-  Result.Open(Filename, Flags);
+  Result.Open(Filename, OpenFlags);
 end;
 
 class function TSqlite3.IsThreadSafe: Boolean;

@@ -10,7 +10,6 @@ uses
   System.Classes,
   System.SysUtils,
   System.Diagnostics,
-  Vcl.Dialogs,
   System.StrUtils;
 
 {$ENDREGION}
@@ -160,6 +159,7 @@ type
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
+    procedure CheckHandle;
     {Open/Close...}
     procedure Open(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT);
     procedure OpenIntoMemory(const FileName: string);
@@ -245,6 +245,7 @@ type
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
+    procedure CheckHandle;
     {Open/Close...}
     procedure Open(const FileName: string; OpenFlags: integer);
     procedure Close;
@@ -538,6 +539,12 @@ begin
     raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, UTF8ToString(sqlite3_errmsg(FHandle))]), ErrCode);
 end;
 
+procedure TSqlite3Database.CheckHandle;
+begin
+  if FHandle = nil then
+    raise ESqliteError.Create(SDatabaseNotConnected, -1);
+end;
+
 function TSqlite3Database.GetFilename: string;
 begin
   Result := FFilename;
@@ -545,8 +552,6 @@ end;
 
 function TSqlite3Database.GetHandle: PSqlite3;
 begin
-  if FHandle = nil then
-    raise ESqliteError.Create(SDatabaseNotConnected, -1);
   Result := FHandle;
 end;
 
@@ -560,7 +565,7 @@ begin
   Close;
   Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, OpenFlags, nil));
   FFilename := FileName;
-  Self.Execute('PRAGMA foreign_keys = ON');
+  Execute('PRAGMA foreign_keys = ON');
 end;
 
 procedure TSqlite3Database.OpenIntoMemory(const FileName: string);
@@ -618,6 +623,7 @@ end;
 
 function TSqlite3Database.Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement;
 begin
+  CheckHandle;
   Result := TSQLite3Statement.Create(Self, SQL, PrepFlags);
 end;
 
@@ -657,6 +663,7 @@ end;
 
 procedure TSqlite3Database.Execute(const SQL: string);
 begin
+  CheckHandle;
   Check(sqlite3_exec(Handle, PAnsiChar(UTF8Encode(SQL)), nil, nil, nil));
 end;
 
@@ -667,6 +674,7 @@ end;
 
 function TSqlite3Database.LastInsertRowID: Int64;
 begin
+  CheckHandle;
   Result := sqlite3_last_insert_rowid(Handle);
 end;
 
@@ -728,6 +736,7 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 {Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3}
 begin
   FOwnerDatabase := OwnerDatabase;
+  FOwnerDatabase.CheckHandle;
   FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
 end;
 
@@ -896,6 +905,7 @@ end;
 constructor TSqlite3BlobHandler.Create(OwnerDatabase: ISqlite3Database; const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean);
 begin
   FOwnerDatabase := OwnerDatabase;
+  FOwnerDatabase.CheckHandle;
   FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PAnsiChar(UTF8Encode(Table)), PAnsiChar(UTF8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
 end;
 

@@ -1,7 +1,7 @@
 # Rgd.Sqlite3
 Simple, effective Sqlite3 interface unit
 
-  Rgd.SQLite3 for Delphi - A light-wieght SQlite3 interface
+  Rgd.SQLite3 for Delphi - A light-wieght Sqlite3 interface
 
 Credits:
 

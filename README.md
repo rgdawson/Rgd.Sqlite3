@@ -81,13 +81,13 @@ Example: inserting records from a CSV file...
 
     procedure TMainForm.ReadCsvIntoDatabase;
     var
-      Lines, Fields: TStringlist;
+      Lines, Values: TStringlist;
     begin
       Lines := TStringlist.Create;
-      Fields := TStringlist.Create;
+      Values := TStringlist.Create;
+      Values.StricDelimiter := True;
       try
         CreateDatabase;
-        Fields.StrictDelimiter := True;
         Lines.LoadFromFile('organizations-1000.csv');
         Lines.Delete(0); {Ignore Header}
     
@@ -104,7 +104,7 @@ Example: inserting records from a CSV file...
           end;
         end);
       finally
-        Fields.Free;
+        Values.Free;
         Lines.Free;
       end;
       DB.Execute('ANALYZE');

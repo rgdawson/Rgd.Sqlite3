@@ -413,7 +413,6 @@ resourcestring
   SDatabaseNotConnected   = 'Sqlite error: database is not connected';
   STransactionAlreadyOpen = 'Transaction is already opened';
   SNoTransactionOpen      = 'No transaction is open';
-  SColumnNameNotFound     = 'Column ''%s'' not found in columns:'#13#10'%s';
   SParamCountMismatch     = 'Parameter Count Mismatch in BindParams';
   STypeNotSupported       = 'VType %d not supported in BindParams()';
   SImproperSQL            = 'Incorrect SQL for this function, must be SELECT COUNT()';

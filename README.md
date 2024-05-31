@@ -92,16 +92,16 @@ Example: inserting records from a CSV file...
         Lines.Delete(0); {Ignore Header}
     
         DB.Transaction(procedure
-          var S: string;
+        begin
+          with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
           begin
-            with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?)') do
+            for var S in Lines do
             begin
-              for S in Lines do
-              begin
-                Fields.CommaText := S;
-                BindAndStep([Fields[2], Fields[3], Fields[4], Fields[5], Fields[6], Fields[7], Fields[8]]);
-              end;
+              Values.CommaText := S;
+              Values.Delete(0); {Ignore first column in our sample .csv}
+              BindAndStep(Values.ToStringArray);
             end;
+          end;
         end);
       finally
         Fields.Free;

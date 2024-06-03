@@ -10,6 +10,10 @@ uses
   System.Classes,
   System.SysUtils,
   System.Diagnostics,
+  {$IFNDEF CONSOLE}
+  Vcl.Dialogs,
+  Vcl.Forms,
+  {$ENDIF}
   System.StrUtils;
 
 {$ENDREGION}
@@ -344,11 +348,11 @@ Implementation
  *  required to support this unit. (from sqlite3.h)
  ***********************************************************************)
 const
-  sqlite3_lib = 'Sqlite3.dll';
+  sqlite3_lib = 'Sqlite3.dll';  {minimum version 3.20 or later required due to use of sqlite3_prepare_v3()}
   SQL_NTS = -1;
   SQLITE_TRANSIENT = Pointer(-1);
 var
-  SQLITE3_VERSION: DWORD = 0; {Populated on DB.Create, holds Major=Hi(SQLITE3_VERSION)(alwyays=3), Minor=Lo(SQLITE3_VERSION)}
+  SQLITE3_VERSION: DWORD = 0; {Populated on INITIALIZATION, holds Major=Hi(SQLITE3_VERSION)(alwyays=3), Minor=Lo(SQLITE3_VERSION)}
 
 type
   PPAnsiCharArray = ^TPAnsiCharArray;
@@ -370,7 +374,7 @@ function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; 
 function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external sqlite3_lib;
 
 function sqlite3_exec(DB: PSqlite3; SQL: PAnsiChar; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_prepare_v3(DB: PSQLite3; zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib;
+function sqlite3_prepare_v3(DB: PSQLite3; zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
 function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external sqlite3_lib;
@@ -408,7 +412,7 @@ function sqlite3_blob_write(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset
 
 {$REGION ' ESqliteError '}
 
-resourcestring
+const
   SErrorMessage           = 'Sqlite error: [%d] %s';
   SDatabaseNotConnected   = 'Sqlite error: database is not connected';
   STransactionAlreadyOpen = 'Transaction is already opened';
@@ -519,9 +523,6 @@ constructor TSqlite3Database.Create;
 begin
   FHandle := nil;
   sqlite3_initialize;
-  SQLITE3_VERSION := TSqlite3.GetSQLiteVersion;
-  if LoWord(SQLITE3_VERSION) < 20 then
-    raise Exception.Create('Sqlite3 Version 3.20 or greater required');
 end;
 
 destructor TSqlite3Database.Destroy;
@@ -1003,5 +1004,21 @@ begin
 end;
 
 {$ENDREGION}
+
+Initialization
+begin
+  SQLITE3_VERSION := TSqlite3.GetSQLiteVersion;
+  if LoWord(SQLITE3_VERSION) < 20 then
+  begin
+    {$IFNDEF CONSOLE}
+    ShowMessage('Sqlite3 Version 3.20 or greater not found.  Application terminating.');
+    Application.Terminate;
+    {$ELSE}
+    Writeln('Sqlite3 Version 3.20 or greater not found.  Application will terminate.');
+    ReadLn;
+    Halt;
+    {$ENDIF}
+  end;
+end;
 
 End.

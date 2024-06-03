@@ -6,7 +6,7 @@ Simple, effective Sqlite3 interface unit
 Credits:
 
 This unit borrows ideas from Yury Plashenkov in https://github.com/plashenkov/SQLite3-Delphi-FPC,
-which I have always admired for its genius simplicity and clarity.  With Yuri's conepts in mind,
+which I have always admired for its genius simplicity and clarity.  With Yuri's concepts in mind,
 Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonomous methods, the ideas
 for which I got by reading "Coding in Delphi" by Nick Hodges, plus some flexible goodies for
 binding and fetching data, and performing transactions.
@@ -81,30 +81,30 @@ Example: inserting records from a CSV file...
 
     procedure TMainForm.ReadCsvIntoDatabase;
     var
-      Lines, Fields: TStringlist;
+      Lines, Values: TStringlist;
     begin
       Lines := TStringlist.Create;
-      Fields := TStringlist.Create;
+      Values := TStringlist.Create;
+      Values.StricDelimiter := True;
       try
         CreateDatabase;
-        Fields.StrictDelimiter := True;
         Lines.LoadFromFile('organizations-1000.csv');
         Lines.Delete(0); {Ignore Header}
     
         DB.Transaction(procedure
-          var S: string;
+        begin
+          with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
           begin
-            with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?)') do
+            for var S in Lines do
             begin
-              for S in Lines do
-              begin
-                Fields.CommaText := S;
-                BindAndStep([Fields[2], Fields[3], Fields[4], Fields[5], Fields[6], Fields[7], Fields[8]]);
-              end;
+              Values.CommaText := S;
+              Values.Delete(0); {Ignore first column in our sample .csv}
+              BindAndStep(Values.ToStringArray);
             end;
+          end;
         end);
       finally
-        Fields.Free;
+        Values.Free;
         Lines.Free;
       end;
       DB.Execute('ANALYZE');

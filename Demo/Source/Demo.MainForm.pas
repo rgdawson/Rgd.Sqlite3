@@ -57,10 +57,10 @@ const
   CRLF = #13#10;
 begin
   SqliteInfoForm.Memo1.Text :=
-    'Version: ' + TSqlite3.GetSQLiteVersionStr + CRLF +
-    'Path: ' + TSqlite3.GetSqliteLibPath + CRLF +
+    'Version: ' + TSqlite3.VersionStr + CRLF +
+    'Path: ' + TSqlite3.LibPath + CRLF +
     'Compiled Options:' + CRLF +
-    Trim(TSqlite3.GetSQLiteCompileOptions);
+    Trim(TSqlite3.CompileOptions);
   SqliteInfoForm.ShowModal;
 end;
 

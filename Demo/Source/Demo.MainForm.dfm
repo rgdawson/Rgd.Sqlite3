@@ -72,7 +72,6 @@ object MainForm: TMainForm
         Width = 70
       end>
     DoubleBuffered = True
-    Items.ItemData = {050000000000000000}
     RowSelect = True
     ParentDoubleBuffered = False
     TabOrder = 0

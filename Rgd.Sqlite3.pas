@@ -328,12 +328,13 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
-    class function IsThreadSafe: Boolean; static;
-    class function GetSqliteLibPath: string; static;
-    class function GetSQLiteVersion: DWORD; static;
-    class function GetSQLiteVersionStr: string; static;
-    class function GetSQLiteCompileOptions: string; static;
+    class function ThreadSafe: Boolean; static;
+    class function LibPath: string; static;
+    class function Version: DWORD; static;
+    class function VersionStr: string; static;
+    class function CompileOptions: string; static;
     class function OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database; static;
+    class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database; static;
   end;
 
 var
@@ -944,12 +945,12 @@ end;
 
 {$REGION ' TSqlite3 Class Functions '}
 
-class function TSqlite3.GetSQLiteVersionStr: string;
+class function TSqlite3.VersionStr: string;
 begin
   Result := UTF8ToString(sqlite3_libversion);
 end;
 
-class function TSqlite3.GetSQLiteVersion: DWORD;
+class function TSqlite3.Version: DWORD;
 var
   VerStr: string;
   P1, P2: integer;
@@ -969,7 +970,7 @@ begin
   end;
 end;
 
-class function TSqlite3.GetSQLiteCompileOptions: string;
+class function TSqlite3.CompileOptions: string;
 const
   CRLF = #13#10;
 var
@@ -982,7 +983,7 @@ begin
     Result := Result + SqlColumn[0].AsText + CRLF;
 end;
 
-class function TSqlite3.GetSqliteLibPath: string;
+class function TSqlite3.LibPath: string;
 var
   L: Integer;
 begin
@@ -998,7 +999,13 @@ begin
   Result.Open(Filename, OpenFlags);
 end;
 
-class function TSqlite3.IsThreadSafe: Boolean;
+class function TSqlite3.OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
+begin
+  Result := TSqlite3Database.Create;
+  Result.OpenIntoMemory(Filename);
+end;
+
+class function TSqlite3.ThreadSafe: Boolean;
 begin
   Result := sqlite3_threadsafe <> 0;
 end;
@@ -1007,14 +1014,14 @@ end;
 
 Initialization
 begin
-  SQLITE3_VERSION := TSqlite3.GetSQLiteVersion;
+  SQLITE3_VERSION := TSqlite3.Version;
   if LoWord(SQLITE3_VERSION) < 20 then
   begin
     {$IFNDEF CONSOLE}
-    ShowMessage('Sqlite3 Version 3.20 or greater not found.  Application terminating.');
+    ShowMessage('Sqlite3.dll Version 3.20 or greater not found.  Application terminating.');
     Application.Terminate;
     {$ELSE}
-    Writeln('Sqlite3 Version 3.20 or greater not found.  Application will terminate.');
+    Writeln('Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.');
     ReadLn;
     Halt;
     {$ENDIF}

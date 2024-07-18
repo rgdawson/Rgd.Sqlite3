@@ -176,14 +176,14 @@ type
     procedure BeginTransaction;
     procedure Commit;
     procedure Rollback;
-    procedure Transaction(Proc: TProc); overload;
+    procedure Transaction(const Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
     function LastInsertRowID: Int64;
     {Fetching...}
-    procedure Fetch(const SQL: string; StmtProc: TStmtProc); overload;
-    procedure Fetch(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
+    procedure Fetch(const SQL: string; const StmtProc: TStmtProc); overload;
+    procedure Fetch(const SQL: string; const FmtParams: array of const; const StmtProc: TStmtProc); overload;
     function  FetchCount(const SQL: string): integer; overload;
     function  FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs...}
@@ -212,8 +212,8 @@ type
     function  StepAndReset: integer; overload;
     {Fetching, Updating...}
     procedure Reset;
-    procedure Fetch(StepProc: TProc);
-    procedure BindAndFetch(const Params: array of const; StepProc: TProc);
+    procedure Fetch(const StepProc: TProc);
+    procedure BindAndFetch(const Params: array of const; const StepProc: TProc);
     function SqlColumnCount: integer;
     {Properties...}
     property Handle: PSqlite3Stmt read GetHandle;
@@ -262,14 +262,14 @@ type
     procedure BeginTransaction;
     procedure Commit;
     procedure Rollback;
-    procedure Transaction(Proc: TProc); overload;
+    procedure Transaction(const Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
     function LastInsertRowID: Int64;
     {Fetch, Updating...}
-    procedure Fetch(const SQL: string; StmtProc: TStmtProc); overload;
-    procedure Fetch(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc); overload;
+    procedure Fetch(const SQL: string; const StmtProc: TStmtProc); overload;
+    procedure Fetch(const SQL: string; const FmtParams: array of const; const StmtProc: TStmtProc); overload;
     function FetchCount(const SQL: string): integer; overload;
     function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs}
@@ -301,8 +301,8 @@ type
     function StepAndReset: integer; overload;
     {Fetching, Updating}
     procedure Reset;
-    procedure Fetch(FetchProc: TProc);
-    procedure BindAndFetch(const Params: array of const; StepProc: TProc);
+    procedure Fetch(const FetchProc: TProc);
+    procedure BindAndFetch(const Params: array of const; const StepProc: TProc);
     function SqlColumnCount: integer;
   public
     {Constructor/Destructor}
@@ -633,7 +633,7 @@ begin
   Result := Prepare(Format(SQL, FmtParams), PrepFlags);
 end;
 
-procedure TSqlite3Database.Fetch(const SQL: string; StmtProc: TStmtProc);
+procedure TSqlite3Database.Fetch(const SQL: string; const StmtProc: TStmtProc);
 var
   Stmt: ISqlite3Statement;
 begin
@@ -642,7 +642,7 @@ begin
     StmtProc(Stmt);
 end;
 
-procedure TSqlite3Database.Fetch(const SQL: string; const FmtParams: array of const; StmtProc: TStmtProc);
+procedure TSqlite3Database.Fetch(const SQL: string; const FmtParams: array of const; const StmtProc: TStmtProc);
 begin
   Fetch(Format(SQL, FmtParams), StmtProc);
 end;
@@ -717,7 +717,7 @@ begin
     raise ESqliteError.Create(SNoTransactionOpen, -1);
 end;
 
-procedure TSqlite3Database.Transaction(Proc: TProc);
+procedure TSqlite3Database.Transaction(const Proc: TProc);
 begin
   BeginTransaction;
   try
@@ -881,13 +881,13 @@ begin
   FOwnerDatabase.Check(sqlite3_reset(FHandle));
 end;
 
-procedure TSQLite3Statement.Fetch(FetchProc: TProc);
+procedure TSQLite3Statement.Fetch(const FetchProc: TProc);
 begin
   while Step = SQLITE_ROW do
     FetchProc;
 end;
 
-procedure TSQLite3Statement.BindAndFetch(const Params: array of const; StepProc: TProc);
+procedure TSQLite3Statement.BindAndFetch(const Params: array of const; const StepProc: TProc);
 begin
   BindParams(Params);
   while Step = SQLITE_ROW do

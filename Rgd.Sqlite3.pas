@@ -120,13 +120,9 @@ type
 
   {Column, Param Accessors...}
 
-  {Remark: TSqlParam and TSqlColumn are not intended to be declared as variables, rather, the intent is to be used
-           fluently, such as Stmt.SqlColumn[i].AsText.  Therefore, that would guarantee that FStmt does exist and
-           we can safely use the [unsafe] attribute, which can save a few milliseconds, when retrieving 1000's of
-           records.  So the only point of using [unsafe] is to save a few milliseconds, not to break any reference
-           cycle as is normally the reason for using the [unsafe]. In other words the [unsafe] is not necessary and
-           can be omitted if not comfortable with this approach. Btw, [weak] does not save the milliseconds so that
-           would be pointless.}
+  {Remark: TSqlParam and TSqlColumn are not intended to be declared as variables.
+           These types are return values for SqlColumn and SqlParam. The intent
+           is to support fluent style, such as Stmt.SqlColumn[i].AsText.}
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -734,7 +730,8 @@ end;
 {$REGION ' TSqlite3Statment '}
 
 constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = 0);
-{Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3}
+{Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3.  We are using v3 so we can use
+         the prep flag SQLITE_PREPARE_PERSISTENT}
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
@@ -1018,7 +1015,7 @@ begin
   if LoWord(SQLITE3_VERSION) < 20 then
   begin
     {$IFNDEF CONSOLE}
-    ShowMessage('Sqlite3.dll Version 3.20 or greater not found.  Application terminating.');
+    ShowMessage('Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.');
     Application.Terminate;
     {$ELSE}
     Writeln('Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.');

@@ -106,7 +106,7 @@ object MainForm: TMainForm
     TabOrder = 3
     OnClick = cbxCountryClick
   end
-  object Button1: TButton
+  object btnInfo: TButton
     Left = 681
     Top = 504
     Width = 129
@@ -114,6 +114,6 @@ object MainForm: TMainForm
     Anchors = [akRight, akBottom]
     Caption = 'Sqlite3.dll Info'
     TabOrder = 4
-    OnClick = Button1Click
+    OnClick = btnInfoClick
   end
 end

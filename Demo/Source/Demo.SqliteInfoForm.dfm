@@ -25,7 +25,6 @@ object SqliteInfoForm: TSqliteInfoForm
     ReadOnly = True
     ScrollBars = ssVertical
     TabOrder = 1
-    ExplicitHeight = 193
   end
   object btnClose: TButton
     Left = 528

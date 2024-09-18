@@ -16,18 +16,18 @@ uses
 type
   TMainForm = class(TForm)
     btnClose   : TButton;
+    btnInfo: TButton;
     cbxCountry : TComboBox;
     Label2     : TLabel;
     Label3     : TLabel;
     ListView1  : TListView;
     Memo1      : TMemo;
-    Button1: TButton;
-    procedure ListView1SelectItem (Sender: TObject; Item: TListItem; Selected: Boolean);
-    procedure btnCloseClick       (Sender: TObject);
-    procedure FormResize          (Sender: TObject);
-    procedure cbxCountryClick     (Sender: TObject);
+    procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
-    procedure Button1Click(Sender: TObject);
+    procedure btnCloseClick(Sender: TObject);
+    procedure btnInfoClick(Sender: TObject);
+    procedure cbxCountryClick(Sender: TObject);
+    procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
   private
     Stmt_Description: ISqlite3Statement;
     procedure CreateDatabase;
@@ -52,32 +52,6 @@ Implementation
 const
   ALL_COUNTRIES = '-- All Countries --';
 
-procedure TMainForm.Button1Click(Sender: TObject);
-const
-  CRLF = #13#10;
-begin
-  SqliteInfoForm.Memo1.Text :=
-    'Version: ' + TSqlite3.VersionStr + CRLF +
-    'Path: ' + TSqlite3.LibPath + CRLF +
-    'Compiled Options:' + CRLF +
-    Trim(TSqlite3.CompileOptions);
-  SqliteInfoForm.ShowModal;
-end;
-
-procedure TMainForm.cbxCountryClick(Sender: TObject);
-begin
-  if cbxCountry.Text = ALL_COUNTRIES then
-    LoadListView
-  else
-    LoadListView(cbxCountry.Text);
-  Memo1.Lines.Clear;
-end;
-
-procedure TMainForm.btnCloseClick(Sender: TObject);
-begin
-  Close;
-end;
-
 procedure TMainForm.FormResize(Sender: TObject);
 begin
   ResizeColumns;
@@ -91,14 +65,36 @@ begin
   cbxCountry.ItemIndex := 0;
 end;
 
+procedure TMainForm.btnCloseClick(Sender: TObject);
+begin
+  Close;
+end;
+
+procedure TMainForm.btnInfoClick(Sender: TObject);
+const
+  CRLF = #13#10;
+begin
+  SqliteInfoForm.Memo1.Text :=
+    'Version: ' + TSqlite3.VersionStr + CRLF +
+    'Path: ' + TSqlite3.LibPath       + CRLF +
+    'Compiled Options:'               + CRLF +
+    Trim(TSqlite3.CompileOptions);
+  SqliteInfoForm.ShowModal;
+end;
+
+procedure TMainForm.cbxCountryClick(Sender: TObject);
+begin
+  if cbxCountry.Text = ALL_COUNTRIES then
+    LoadListView
+  else
+    LoadListView(cbxCountry.Text);
+  Memo1.Lines.Clear;
+end;
+
 procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
 begin
-  with Stmt_Description do
-  begin
-    BindParams([Item.Caption]);
-    if Step = SQLITE_ROW then
-      Memo1.Lines.Text := SqlColumn[0].AsText;
-  end;
+  Stmt_Description.BindAndStep([Item.Caption]);
+  Memo1.Lines.Text := Stmt_Description.SqlColumn[0].AsText;
 end;
 
 {$ENDREGION}
@@ -111,14 +107,14 @@ begin
   {Create Table...}
   DB.Execute(
     ' CREATE TABLE Organizations ( ' +
-    '   OrgID                     TEXT NOT NULL,' +
-    '   Name                      TEXT,' +
-    '   Website                   TEXT,' +
-    '   Country                   TEXT,' +
-    '   Description               TEXT,' +
-    '   Founded                   TEXT,' +
-    '   Industry                  TEXT,' +
-    '   EmployeeCount             INTEGER,' +
+    '   OrgID            TEXT NOT NULL,' +
+    '   Name             TEXT,' +
+    '   Website          TEXT,' +
+    '   Country          TEXT,' +
+    '   Description      TEXT,' +
+    '   Founded          TEXT,' +
+    '   Industry         TEXT,' +
+    '   EmployeeCount    INTEGER,' +
     ' PRIMARY KEY (OrgID ASC))' +
     ' WITHOUT ROWID');
 end;
@@ -140,18 +136,16 @@ begin
 end;
 
 procedure TMainForm.LoadListView;
-var
-  Item: TListItem;
 begin
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
 
   with DB.Prepare(
-      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
-      '  FROM Organizations' +
-      ' ORDER BY 2') do Fetch(procedure
+    'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
+    '  FROM Organizations' +
+    ' ORDER BY 2') do Fetch(procedure
   begin
-    Item := ListView1.Items.Add;
+    var Item := ListView1.Items.Add;
     Item.Caption   := SqlColumn[0].AsText;
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
@@ -162,8 +156,6 @@ begin
 end;
 
 procedure TMainForm.LoadListView(Country: string);
-var
-  Item: TListItem;
 begin
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
@@ -174,7 +166,7 @@ begin
     ' WHERE Country = ?' +
     ' ORDER BY 2') do BindAndFetch([Country], procedure
   begin
-    Item := ListView1.Items.Add;
+    var Item := ListView1.Items.Add;
     Item.Caption := SqlColumn[0].AsText;
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);

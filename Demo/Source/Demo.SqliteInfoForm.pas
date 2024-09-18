@@ -1,10 +1,18 @@
-unit Demo.SqliteInfoForm;
+Unit Demo.SqliteInfoForm;
 
-interface
+Interface
 
 uses
-  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
-  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls;
+  Winapi.Windows,
+  Winapi.Messages,
+  System.SysUtils,
+  System.Variants,
+  System.Classes,
+  Vcl.Graphics,
+  Vcl.Controls,
+  Vcl.Forms,
+  Vcl.Dialogs,
+  Vcl.StdCtrls;
 
 type
   TSqliteInfoForm = class(TForm)
@@ -19,8 +27,8 @@ type
 var
   SqliteInfoForm: TSqliteInfoForm;
 
-implementation
+Implementation
 
 {$R *.dfm}
 
-end.
+End.

@@ -1,9 +1,7 @@
 # Rgd.Sqlite3
-Simple, effective Sqlite3 interface unit
+Rgd.SQLite3 for Delphi - A light-weight, simple, effective Sqlite3 interface unit
 
 Can use sqlite3.dll dynamically or statically link the sqlite3 library
-
-  Rgd.SQLite3 for Delphi - A light-weight Sqlite3 interface
 
 Credits:
 

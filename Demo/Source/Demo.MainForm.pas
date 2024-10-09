@@ -6,6 +6,7 @@ uses
   System.Classes,
   System.SysUtils,
   System.Diagnostics,
+  System.StrUtils,
   Rgd.Sqlite3,
   Vcl.Controls,
   Vcl.Forms,
@@ -22,6 +23,7 @@ type
     Label3     : TLabel;
     ListView1  : TListView;
     Memo1      : TMemo;
+    Label1     : TLabel;
     procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure btnCloseClick(Sender: TObject);
@@ -58,11 +60,15 @@ begin
 end;
 
 procedure TMainForm.FormShow(Sender: TObject);
+var
+  S: TStopWatch;
 begin
+  S := TStopWatch.StartNew;
   ReadCsvIntoDatabase;
   FillCountryCombo;
   LoadListView;
   cbxCountry.ItemIndex := 0;
+  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
 end;
 
 procedure TMainForm.btnCloseClick(Sender: TObject);
@@ -75,20 +81,24 @@ const
   CRLF = #13#10;
 begin
   SqliteInfoForm.Memo1.Text :=
+    'Library: ' + TSqlite3.LibPath       + CRLF +
     'Version: ' + TSqlite3.VersionStr + CRLF +
-    'Path: ' + TSqlite3.LibPath       + CRLF +
     'Compiled Options:'               + CRLF +
     Trim(TSqlite3.CompileOptions);
   SqliteInfoForm.ShowModal;
 end;
 
 procedure TMainForm.cbxCountryClick(Sender: TObject);
+var
+  S: TStopwatch;
 begin
+  S := TStopWatch.StartNew;
   if cbxCountry.Text = ALL_COUNTRIES then
     LoadListView
   else
     LoadListView(cbxCountry.Text);
   Memo1.Lines.Clear;
+  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
 end;
 
 procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -139,27 +149,24 @@ procedure TMainForm.LoadListView;
 begin
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
-
   with DB.Prepare(
     'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
     '  FROM Organizations' +
     ' ORDER BY 2') do Fetch(procedure
   begin
     var Item := ListView1.Items.Add;
-    Item.Caption   := SqlColumn[0].AsText;
+    Item.Caption := SqlColumn[0].AsText;
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
-
-  ListView1.Items.EndUpdate;
   ResizeColumns;
+  ListView1.Items.EndUpdate;
 end;
 
 procedure TMainForm.LoadListView(Country: string);
 begin
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
-
   with DB.Prepare(
     'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
     '  FROM Organizations' +
@@ -171,9 +178,8 @@ begin
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
-
-  ListView1.Items.EndUpdate;
   ResizeColumns;
+  ListView1.Items.EndUpdate;
 end;
 
 procedure TMainForm.ReadCsvIntoDatabase;
@@ -186,7 +192,7 @@ begin
 
   try
     CreateDatabase;
-    Lines.LoadFromFile('organizations-1000.csv');
+    Lines.LoadFromFile('organizations-1000.csv', TEncoding.UTF8);
     Lines.Delete(0); {Ignore Header}
 
     DB.Transaction(procedure
@@ -212,7 +218,7 @@ begin
   Stmt_Description := DB.Prepare(
     'SELECT Description'   +
     '  FROM Organizations' +
-    ' WHERE OrgID = ?', SQLITE_PREPARE_PERSISTENT);
+    ' WHERE OrgID = ?');
 end;
 
 procedure TMainForm.ResizeColumns;

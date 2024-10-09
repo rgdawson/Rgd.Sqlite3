@@ -1,5 +1,11 @@
 Unit Rgd.Sqlite3;
 
+{$DEFINE SQLITE_STATIC}
+
+{^^^ With SQLITE_STATIC is defined, then the sqlite3 library contained in FireDAC.Phys.SQLiteWrapper.Stat
+     will be statically linked into executable and a sqlite3.dll file will not be used/required.  As of
+     Delphi Version 12.2, this is Sqlite3 version 3.46.0}
+
 Interface
 
 {$REGION ' Uses '}
@@ -9,12 +15,10 @@ uses
   System.Types,
   System.Classes,
   System.SysUtils,
-  System.Diagnostics,
-  {$IFNDEF CONSOLE}
-  Vcl.Dialogs,
-  Vcl.Forms,
-  {$ENDIF}
-  System.StrUtils;
+  System.StrUtils,
+  System.Diagnostics
+  {$IFDEF SQLITE_STATIC},FireDAC.Phys.SQLiteWrapper.Stat{$ENDIF}
+  {$IFNDEF CONSOLE},Vcl.Dialogs, Vcl.Forms{$ENDIF};
 
 {$ENDREGION}
 
@@ -61,7 +65,7 @@ const
   SQLITE_BLOB    = 4;
   SQLITE_NULL    = 5;
 
-  {Open Flags...}
+  {Sqlite Open Flags...}
   SQLITE_OPEN_READONLY       = $00000001;
   SQLITE_OPEN_READWRITE      = $00000002;
   SQLITE_OPEN_CREATE         = $00000004;
@@ -85,7 +89,7 @@ const
   SQLITE_OPEN_NOFOLLOW       = $01000000;
   SQLITE_OPEN_DEFAULT        = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE;
 
-  {SQL PrepFlags}
+  {Sqlite Prepare Flags...}
   SQLITE_PREPARE_DEFAULT    = $00;
   SQLITE_PREPARE_PERSISTENT = $01;
   SQLITE_PREPARE_NORMALIZE  = $02; {deprecated, no-op}
@@ -93,9 +97,9 @@ const
 
 type
   {Sqlite pointer types...}
-  PSqlite3     = type Pointer;
-  PSqlite3Stmt = type Pointer;
-  PSqlite3Blob = type Pointer;
+  PSqlite3     = Pointer;
+  PSqlite3Stmt = Pointer;
+  PSqlite3Blob = Pointer;
 
 {$ENDREGION}
 
@@ -302,7 +306,7 @@ type
     function SqlColumnCount: integer;
   public
     {Constructor/Destructor}
-    constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = 0);
+    constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT);
     destructor Destroy; override;
   end;
 
@@ -341,11 +345,23 @@ Implementation
 {$REGION ' Sqlite DLL Api Externals '}
 
 (***********************************************************************
- *  This is just the minimum set of sqlite3.dll external functions
+ *  This is the minimum set of sqlite3 definitions
  *  required to support this unit. (from sqlite3.h)
+ *
+ *  If linking Sqlite3 statically via FireDAC.Phys.SQLiteWrapper.Stat,
+ *  then the Sqlite3 functions come from there.  Since I don't
+ *  have the source code to FireDAC, I had to figure out the param
+ *  types used by using the IDE editor hints.  I have since modified
+ *  the dll function prototypes to match FireDAC in order to have a single
+ *  unit that can switch between Static/DLL by defining SQLITE_STATIC.
+ *  FireDac likes to use PByte instead of PAnsiChar, so some additional
+ *  typecasting is needed below.
+ *  FireDAC param types:
+ *    PByte (System.Types) = System.Byte = ^Byte
+ *    PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar
+ *    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar
  ***********************************************************************)
 const
-  sqlite3_lib = 'Sqlite3.dll';  {minimum version 3.20 or later required due to use of sqlite3_prepare_v3()}
   SQL_NTS = -1;
   SQLITE_TRANSIENT = Pointer(-1);
 var
@@ -355,55 +371,58 @@ type
   PPAnsiCharArray = ^TPAnsiCharArray;
   TPAnsiCharArray = array[0..MaxInt div SizeOf(PAnsiChar) - 1] of PAnsiChar;
   TSqliteCallback = function(pArg: Pointer; nCol: Integer; argv: PPAnsiCharArray; colv: PPAnsiCharArray): Integer; cdecl;
-  PSqliteBackup   = type Pointer;
-  TDestructor  = procedure(p: Pointer); cdecl;
+  PSqliteBackup   = Pointer;
+  PUtf8           = PAnsiChar;
+  TSqlite3_Destroy_Callback = procedure(p: Pointer); cdecl;
 
-function sqlite3_initialize: Integer; cdecl; external sqlite3_lib;
-function sqlite3_libversion: PAnsiChar; cdecl; external sqlite3_lib;
-function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; cdecl; external sqlite3_lib;
-function sqlite3_threadsafe: Integer; cdecl; external sqlite3_lib;
+{$IFNDEF SQLITE_STATIC}
+function sqlite3_initialize: integer; cdecl; external 'sqlite3.dll';
+function sqlite3_libversion: PAnsiChar; cdecl; external 'sqlite3.dll';
+function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; cdecl; external 'sqlite3.dll';
+function sqlite3_threadsafe: integer; cdecl; external 'sqlite3.dll';
 
-function sqlite3_open_v2(FileName: PAnsiChar; out ppDb: PSqlite3; Flags: integer; zVfs: PAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_close(DB: PSqlite3): integer; cdecl; external sqlite3_lib;
+function sqlite3_open_v2(FileName: PUtf8; out ppDb: PSqlite3; Flags: integer; zVfs: PAnsiChar): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_close(DB: PSqlite3): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_backup_init(pDest: PSqlite3; zDestName: PByte; pSource: PSqlite3; zSourceName: PByte): PSqliteBackup; cdecl; external 'sqlite3.dll';
+function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external 'sqlite3.dll';
 
-function sqlite3_backup_init(pDest: PSqlite3; zDestName: PAnsiChar; pSource: PSqlite3; zSourceName: PAnsiChar): PSqliteBackup; cdecl; external sqlite3_lib;
-function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external sqlite3_lib;
+function sqlite3_exec(DB: PSqlite3; SQL: PByte; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_prepare_v3(DB: PSQLite3; zSql: PUtf8; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; pzTail: PPAnsiChar): integer; cdecl; external 'sqlite3.dll' delayed;
+function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external 'sqlite3.dll';
 
-function sqlite3_exec(DB: PSqlite3; SQL: PAnsiChar; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_prepare_v3(DB: PSQLite3; zSql: PAnsiChar; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; pzTail: PPAnsiChar): integer; cdecl; external sqlite3_lib delayed;
-function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external sqlite3_lib;
+function sqlite3_bind_parameter_count(pStmt: PSqlite3Stmt): Integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_parameter_index(pStmt: PSqlite3Stmt; zName: PAnsiChar): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_blob(pStmt: PSqlite3Stmt; i: integer; zData: Pointer; n: integer; xDel: TSqlite3_Destroy_Callback): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_double(pStmt: PSqlite3Stmt; i: integer; rValue: Double): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_int(pStmt: PSqlite3Stmt; i: integer; iValue: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_int64(pStmt: PSqlite3Stmt; i: integer; iValue: Int64): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_null(pStmt: PSqlite3Stmt; i: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_text(pStmt: PSqlite3Stmt; i: integer; zData: PByte; n: integer; xDel: TSqlite3_Destroy_Callback): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_bind_zeroblob(pStmt: PSqlite3Stmt; i: integer; n: integer): integer; cdecl; external 'sqlite3.dll';
 
-function sqlite3_bind_parameter_count(pStmt: PSqlite3Stmt): Integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_parameter_index(pStmt: PSqlite3Stmt; zName: PAnsiChar): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_blob(pStmt: PSqlite3Stmt; i: integer; zData: Pointer; n: integer; xDel: TDestructor): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_double(pStmt: PSqlite3Stmt; i: integer; rValue: Double): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_int(pStmt: PSqlite3Stmt; i: integer; iValue: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_int64(pStmt: PSqlite3Stmt; i: integer; iValue: Int64): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_null(pStmt: PSqlite3Stmt; i: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_text(pStmt: PSqlite3Stmt; i: integer; zData: PAnsiChar; n: integer; xDel: TDestructor): integer; cdecl; external sqlite3_lib;
-function sqlite3_bind_zeroblob(pStmt: PSqlite3Stmt; i: integer; n: integer): integer; cdecl; external sqlite3_lib;
+function sqlite3_clear_bindings(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_step(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
 
-function sqlite3_clear_bindings(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_step(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
+function sqlite3_column_blob(pStmt: PSqlite3Stmt; iCol: integer): Pointer; cdecl; external 'sqlite3.dll';
+function sqlite3_column_double(pStmt: PSqlite3Stmt; iCol: integer): Double; cdecl; external 'sqlite3.dll';
+function sqlite3_column_int(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_column_int64(pStmt: PSqlite3Stmt; iCol: integer): Int64; cdecl; external 'sqlite3.dll';
+function sqlite3_column_text(pStmt: PSqlite3Stmt; iCol: integer): PByte; cdecl; external 'sqlite3.dll';
+function sqlite3_column_bytes(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_column_type(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_column_count(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_column_name(pStmt: PSqlite3Stmt; n: integer): PAnsiChar; cdecl; external 'sqlite3.dll';
 
-function sqlite3_column_blob(pStmt: PSqlite3Stmt; iCol: integer): Pointer; cdecl; external sqlite3_lib;
-function sqlite3_column_double(pStmt: PSqlite3Stmt; iCol: integer): Double; cdecl; external sqlite3_lib;
-function sqlite3_column_int(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_int64(pStmt: PSqlite3Stmt; iCol: integer): Int64; cdecl; external sqlite3_lib;
-function sqlite3_column_text(pStmt: PSqlite3Stmt; iCol: integer): PAnsiChar; cdecl; external sqlite3_lib;
-function sqlite3_column_bytes(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_type(pStmt: PSqlite3Stmt; iCol: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_count(pStmt: PSqlite3Stmt): integer; cdecl; external sqlite3_lib;
-function sqlite3_column_name(pStmt: PSqlite3Stmt; n: integer): PAnsiChar; cdecl; external sqlite3_lib;
+function sqlite3_blob_bytes(pBlob: PSqlite3Blob): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_blob_open(DB: PSqlite3; zDb: PAnsiChar; zTable: PAnsiChar; zColumn: PAnsiChar; iRow: Int64; Flags: integer; var ppBlob: PSqlite3Blob): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_blob_close(pBlob: PSqlite3Blob): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_blob_read(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_blob_write(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external 'sqlite3.dll';
 
-function sqlite3_blob_bytes(pBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_open(DB: PSqlite3; zDb: PAnsiChar; zTable: PAnsiChar; zColumn: PAnsiChar; iRow: Int64; Flags: integer; var ppBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_close(pBlob: PSqlite3Blob): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_read(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external sqlite3_lib;
-function sqlite3_blob_write(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external sqlite3_lib;
+{$ENDIF}
 
 {$ENDREGION}
 
@@ -445,7 +464,7 @@ end;
 
 procedure TSqlParam.BindText(const Value: string);
 begin
-  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PAnsiChar(UTF8Encode(Value)), SQL_NTS, SQLITE_TRANSIENT));
+  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(UTF8Encode(Value)), SQL_NTS, SQLITE_TRANSIENT));
 end;
 
 procedure TSqlParam.BindNull;
@@ -494,12 +513,12 @@ end;
 
 function TSqlColumn.AsText: string;
 begin
-  Result := UTF8ToString(sqlite3_column_text(FStmt.Handle, FColIndex));
+  Result := UTF8ToString(PUtf8(sqlite3_column_text(FStmt.Handle, FColIndex)));
 end;
 
 function TSqlColumn.ColName: string;
 begin
-  Result := UTF8ToString(sqlite3_column_name(FStmt.Handle, FColIndex));
+  Result := UTF8ToString(PUtf8(sqlite3_column_name(FStmt.Handle, FColIndex)));
 end;
 
 function TSqlColumn.ColType: integer;
@@ -533,7 +552,7 @@ begin
   if ErrCode in [SQLITE_OK, SQLITE_ROW, SQLITE_DONE] then
     Result := ErrCode
   else
-    raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, UTF8ToString(sqlite3_errmsg(FHandle))]), ErrCode);
+    raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, UTF8ToString(PAnsiChar(sqlite3_errmsg(FHandle)))]), ErrCode);
 end;
 
 procedure TSqlite3Database.CheckHandle;
@@ -560,7 +579,7 @@ end;
 procedure TSqlite3Database.Open(const FileName: string; OpenFlags: integer);
 begin
   Close;
-  Check(sqlite3_open_v2(PAnsiChar(UTF8Encode(FileName)), FHandle, OpenFlags, nil));
+  Check(sqlite3_open_v2(PUtf8(UTF8Encode(FileName)), FHandle, OpenFlags, nil));
   FFilename := FileName;
   Execute('PRAGMA foreign_keys = ON');
 end;
@@ -574,7 +593,7 @@ begin
   Open(':memory:', SQLITE_OPEN_DEFAULT);
   FFilename := FileName;
   TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
-  Backup := sqlite3_backup_init(Handle, 'main', TempDB.Handle, 'main');
+  Backup := sqlite3_backup_init(Handle, PByte(PAnsiChar('main')), TempDB.Handle, PByte(PAnsiChar('main')));
   sqlite3_backup_step(Backup, -1);
   sqlite3_backup_finish(Backup);
   TempDB.Close;
@@ -596,7 +615,7 @@ begin
   begin
     TempDB := TSqlite3Database.Create;
     TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
-    Backup := sqlite3_backup_init(TempDB.Handle, 'main', Handle, 'main');
+    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
     Check(sqlite3_backup_step(Backup, -1));
     Check(sqlite3_backup_finish(Backup));
     TempDB.Close;
@@ -630,8 +649,7 @@ begin
 end;
 
 procedure TSqlite3Database.Fetch(const SQL: string; const StmtProc: TStmtProc);
-var
-  Stmt: ISqlite3Statement;
+var Stmt: ISqlite3Statement;
 begin
   Stmt := Prepare(SQL, SQLITE_PREPARE_DEFAULT);
   while Stmt.Step = SQLITE_ROW do
@@ -661,7 +679,7 @@ end;
 procedure TSqlite3Database.Execute(const SQL: string);
 begin
   CheckHandle;
-  Check(sqlite3_exec(Handle, PAnsiChar(UTF8Encode(SQL)), nil, nil, nil));
+  Check(sqlite3_exec(Handle, PByte(UTF8Encode(SQL)), nil, nil, nil));
 end;
 
 procedure TSqlite3Database.Execute(const SQL: string; const FmtParams: array of const);
@@ -731,11 +749,21 @@ end;
 
 constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = 0);
 {Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3.  We are using v3 so we can use
-         the prep flag SQLITE_PREPARE_PERSISTENT}
+         the prep flag SQLITE_PREPARE_PERSISTENT.
+         The Statically linked version does not have sqlite3_prepare_v3, so PrepFlags are ignore if present}
+{$IFDEF SQLITE_STATIC}
+var
+  pzTail: PByte;
+{$ENDIF}
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PAnsiChar(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
+  {$IFDEF SQLITE_STATIC}
+  pzTail := nil;
+  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
+  {$ELSE}
+  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PUtf8(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
+  {$ENDIF}
 end;
 
 destructor TSQLite3Statement.Destroy;
@@ -763,7 +791,7 @@ end;
 function TSQLite3Statement.GetSqlParamByName(const ParamName: string): TSqlParam;
 begin
   Result.FStmt := Self;
-  Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, PAnsiChar(UTF8Encode(ParamName)));
+  Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, PUtf8(UTF8Encode(ParamName)));
 end;
 
 function TSQLite3Statement.GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
@@ -831,8 +859,7 @@ begin
 end;
 
 procedure TSQLite3Statement.BindParams(const Params: TArray<string>);
-var
-  i: integer;
+var i: integer;
 begin
   Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
 
@@ -904,7 +931,7 @@ constructor TSqlite3BlobHandler.Create(OwnerDatabase: ISqlite3Database; const Ta
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PAnsiChar(UTF8Encode(Table)), PAnsiChar(UTF8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
+  FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PUtf8(UTF8Encode(Table)), PUtf8(UTF8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
 end;
 
 destructor TSqlite3BlobHandler.Destroy;
@@ -980,15 +1007,21 @@ begin
     Result := Result + SqlColumn[0].AsText + CRLF;
 end;
 
+{$IFDEF SQLITE_STATIC}
 class function TSqlite3.LibPath: string;
-var
-  L: Integer;
+begin
+  Result := 'Static (FireDAC.Phys.SQLiteWrapper.Stat)';
+end;
+{$ELSE}
+class function TSqlite3.LibPath: string;
+var L: Integer;
 begin
   L := MAX_PATH + 1;
   SetLength(Result, L);
-  L := GetModuleFileName(GetModuleHandle(sqlite3_lib), Pointer(Result), L);
+  L := GetModuleFileName(GetModuleHandle('sqlite3.dll'), Pointer(Result), L);
   SetLength(Result, L);
 end;
+{$ENDIF}
 
 class function TSqlite3.OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
 begin
@@ -1004,21 +1037,26 @@ end;
 
 class function TSqlite3.ThreadSafe: Boolean;
 begin
+  {$IFDEF SQLITE_STATIC}
+  Result := TRUE;
+  {$ELSE}
   Result := sqlite3_threadsafe <> 0;
+  {$ENDIF}
 end;
 
 {$ENDREGION}
 
 Initialization
+const ErrMsg = 'Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.';
 begin
   SQLITE3_VERSION := TSqlite3.Version;
   if LoWord(SQLITE3_VERSION) < 20 then
   begin
     {$IFNDEF CONSOLE}
-    ShowMessage('Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.');
+    ShowMessage(ErrMsg);
     Application.Terminate;
     {$ELSE}
-    Writeln('Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.');
+    Writeln(ErrMsg);
     ReadLn;
     Halt;
     {$ENDIF}

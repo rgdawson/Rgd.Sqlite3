@@ -34,6 +34,13 @@ object MainForm: TMainForm
     Height = 15
     Caption = 'Country'
   end
+  object Label1: TLabel
+    Left = 681
+    Top = 479
+    Width = 34
+    Height = 15
+    Caption = 'Label1'
+  end
   object ListView1: TListView
     Left = 8
     Top = 39
@@ -112,7 +119,7 @@ object MainForm: TMainForm
     Width = 129
     Height = 29
     Anchors = [akRight, akBottom]
-    Caption = 'Sqlite3.dll Info'
+    Caption = 'Sqlite3 Library Info'
     TabOrder = 4
     OnClick = btnInfoClick
   end

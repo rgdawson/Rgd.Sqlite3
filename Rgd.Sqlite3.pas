@@ -160,6 +160,7 @@ type
     {Getters...}
     function GetHandle: PSqlite3;
     function GetFilename: string;
+    function GetStatementList: TList;
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
@@ -189,6 +190,7 @@ type
     {Blobs...}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
     {Properties...}
+    property StatementList: TList read GetStatementList;
     property TransactionOpen: Boolean read GetTransactionOpen;
     property Handle: PSqlite3 read GetHandle;
     property Filename: string read GetFilename;
@@ -243,9 +245,11 @@ type
     FHandle: PSqlite3;
     FFilename: string;
     FTransactionOpen: Boolean;
+    FStatementList: TList;
     {Getters...}
     function GetHandle: PSqlite3;
     function GetFilename: string;
+    function GetStatementList: TList;
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
@@ -274,10 +278,10 @@ type
     function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean): ISqlite3BlobHandler;
-    property Handle: PSqlite3 read GetHandle write FHandle;
+    property Handle: PSqlite3 read GetHandle;
   public
     {Constructor/Destructor...}
-    constructor Create;
+    constructor Create; overload;
     destructor Destroy; override;
   end;
 
@@ -388,7 +392,7 @@ function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; 
 function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external 'sqlite3.dll';
 
 function sqlite3_exec(DB: PSqlite3; SQL: PByte; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external 'sqlite3.dll';
-function sqlite3_prepare_v3(DB: PSQLite3; zSql: PUtf8; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; pzTail: PPAnsiChar): integer; cdecl; external 'sqlite3.dll' delayed;
+function sqlite3_prepare_v3(DB: PSQLite3; zSql: PUtf8; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; var pzTail: PByte): integer; cdecl; external 'sqlite3.dll' delayed;
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external 'sqlite3.dll';
@@ -537,13 +541,14 @@ end;
 
 constructor TSqlite3Database.Create;
 begin
-  FHandle := nil;
+  FStatementList := TList.Create;
   sqlite3_initialize;
 end;
 
 destructor TSqlite3Database.Destroy;
 begin
   Close;
+  FStatementList.Free;
   inherited;
 end;
 
@@ -574,6 +579,11 @@ end;
 function TSqlite3Database.GetTransactionOpen: Boolean;
 begin
   Result := FTransactionOpen;
+end;
+
+function TSqlite3Database.GetStatementList: TList;
+begin
+  Result := FStatementList;
 end;
 
 procedure TSqlite3Database.Open(const FileName: string; OpenFlags: integer);
@@ -623,12 +633,22 @@ begin
 end;
 
 procedure TSqlite3Database.Close;
+var
+  i: integer;
 begin
   if Assigned(FHandle) then
   begin
     {Rollback if transaction left open (sqlite will do this automatically, but we are doing it explcitly anyway)...}
     if FTransactionOpen then
       Rollback;
+
+    {Finalize any remaining open Stmt handles...}
+    for i := FStatementList.Count - 1 downto 0 do
+    begin
+      sqlite3_finalize(TSqlite3Statement(FStatementList[i]).FHandle);
+      TSqlite3Statement(FStatementList[i]).FHandle := nil;
+      FStatementList.Remove(FStatementList[i]);
+    end;
 
     {Close Database...}
     Check(sqlite3_close(Handle)); {Note: close will return SQLITE_BUSY if all statment handles are not aslready destroyed/finalized...}
@@ -751,24 +771,27 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 {Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3.  We are using v3 so we can use
          the prep flag SQLITE_PREPARE_PERSISTENT.
          The Statically linked version does not have sqlite3_prepare_v3, so PrepFlags are ignore if present}
-{$IFDEF SQLITE_STATIC}
 var
   pzTail: PByte;
-{$ENDIF}
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  {$IFDEF SQLITE_STATIC}
   pzTail := nil;
+  {$IFDEF SQLITE_STATIC}
   FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
   {$ELSE}
-  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PUtf8(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, nil));
+  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PUtf8(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, pzTail));
   {$ENDIF}
+  FOwnerDatabase.StatementList.Add(Pointer(Self));
 end;
 
 destructor TSQLite3Statement.Destroy;
 begin
-  sqlite3_finalize(FHandle);
+  if Assigned(Self.FHandle) then
+  begin
+    FOwnerDatabase.StatementList.Remove(Pointer(Self));
+    sqlite3_finalize(FHandle);
+  end;
   inherited;
 end;
 
@@ -888,7 +911,7 @@ end;
 
 function TSQLite3Statement.StepAndReset: integer;
 begin
-  {Remark: We are using sqlite3_prepare_v3, So we will get result code without having to call reset to get it.
+  {Remark: We are using sqlite3_prepare_v2/v3, So we will get result code immediately without having to call reset to get it.
            We want to call reset in any case, so we are calling reset before actually checking the result of
            Step and potentially raising an exception. And we are not checking the result of reset because
            that will throw another exception. This way, if we are doing a bunch of StepAndReset inserts and we want to

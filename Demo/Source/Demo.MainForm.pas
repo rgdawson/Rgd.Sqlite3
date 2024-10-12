@@ -159,8 +159,8 @@ begin
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
-  ResizeColumns;
   ListView1.Items.EndUpdate;
+  ResizeColumns;
 end;
 
 procedure TMainForm.LoadListView(Country: string);
@@ -178,8 +178,8 @@ begin
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
-  ResizeColumns;
   ListView1.Items.EndUpdate;
+  ResizeColumns;
 end;
 
 procedure TMainForm.ReadCsvIntoDatabase;

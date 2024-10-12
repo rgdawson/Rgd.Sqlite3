@@ -1033,7 +1033,7 @@ end;
 {$IFDEF SQLITE_STATIC}
 class function TSqlite3.LibPath: string;
 begin
-  Result := 'Static (FireDAC.Phys.SQLiteWrapper.Stat)';
+  Result := 'FireDAC.Phys.SQLiteWrapper.Stat';
 end;
 {$ELSE}
 class function TSqlite3.LibPath: string;

@@ -1,19 +1,19 @@
 Unit Rgd.Sqlite3FDE;
 
-{Remark: This is a variation of Rgd.Sqlite3.pas that links the Delphi FireDAC Encryption version
-         FireDAC.Phys.SQLiteWrapper.FDEStat.  This statically linked pre-built version of Sqlite3
-         is version 3.31.1.  It last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC, which is
-         the encryption mechanism that FireDAC uses.  It was removed Feb 7, 2020 as part of version 3.32.0.
-
-         The approach taken here is to use a bit of FireDAC to create the connection (TFDConnection) to the database
-         including the password.  Once that is done we getthe regular PSqlite3 handle from
-         FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle and proceed as we do in Rgd.Sqlite3.
-
-         There is still some work to finish:
-           (1) Add a function to Change the password - i.e. ChangePassword()
-           (2) Handle incorrect passwords - Maybe have DB.Open return True/False so we can easily create a retry loop
-              for entering passwords.
-         }
+(***************************************************************************************************************************
+ *  Remarks: FireDAC Encryption (FDE) Sqlite3 (v3.31.1)
+ *
+ *      Statically links Sqlite with FireDAC Encryption via the inclusion of FireDAC.Phys.SQLiteWrapper.FDEStat.
+ *      This pre-built version of Sqlite3 is last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC,
+ *      which is the encryption mechanism that FireDAC uses.  It was removed Feb 7, 2020 as part of version 3.32.0.
+ *
+ *      Here, we use FireDAC to create the DB connection using TFDConnection and get the native PSqlite3 database handle.
+ *      The rest is the same as Rgd.Sqlite3.pas.  A TSqlite3 class function was added to set, change, remove the password.
+ *
+ *      There is still some work to finish:
+ *          (1) Handle incorrect passwords - Maybe have DB.Open return True/False so we can easily create a retry loop
+ *              for entering passwords.
+ ***************************************************************************************************************************)
 
 Interface
 
@@ -31,11 +31,11 @@ uses
   FireDAC.Stan.Intf,
   FireDAC.Comp.UI,
   FireDAC.Comp.Client,
+  FireDAC.UI.Intf,
   FireDAC.VCLUI.Wait,
   FireDAC.Phys.SQLite,
   FireDAC.Phys.SQLiteWrapper,
-  FireDAC.Phys.SQLiteWrapper.FDEStat
-  {$IFNDEF CONSOLE},Vcl.Dialogs, Vcl.Forms{$ENDIF};
+  FireDAC.Phys.SQLiteWrapper.FDEStat;
 
 {$ENDREGION}
 
@@ -364,9 +364,6 @@ var
 
 Implementation
 
-uses
-  Unit1;
-
 {$REGION ' Sqlite DLL Api Externals '}
 
 (***********************************************************************
@@ -513,7 +510,6 @@ end;
 
 constructor TSqlite3Database.Create;
 begin
-//  Form1.ListBox1.Items.Add('TSqlite3Database.Create');
   FFDConnection := TFDConnection.Create(nil);
   FStatementList := TList.Create;
 end;
@@ -582,7 +578,7 @@ begin
     SqliteBackup.DriverLink := SqliteDriverLink;
     SqliteBackup.Database := FileName;
     SqliteBackup.Password := Password;
-    SqliteBackup.DestMode := smCreate;
+    SqliteBackup.DestMode := smReadWrite;
     SqliteBackup.DestDatabaseObj := FFDConnection.CliObj;
     SqliteBackup.DestPassword := Password;
     SqliteBackup.Backup;
@@ -621,7 +617,6 @@ var
 begin
   if FFDConnection.Connected then
   begin
-//    Form1.ListBox1.Items.Add('TSqlite3Database.Close');
     if FTransactionOpen then
       Rollback;
     for i := FStatementList.Count - 1 downto 0 do
@@ -752,7 +747,6 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 var
   pzTail: PByte;
 begin
-//  Form1.ListBox1.Items.Add('TSQLite3Statement.Create');
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   pzTail := nil;
@@ -762,7 +756,6 @@ end;
 
 destructor TSQLite3Statement.Destroy;
 begin
-//  Form1.ListBox1.Items.Add('TSQLite3Statement.Destroy');
   if Assigned(Self.FHandle) then
   begin
     FOwnerDatabase.StatementList.Remove(Pointer(Self));
@@ -1008,7 +1001,7 @@ end;
 
 class function TSqlite3.LibPath: string;
 begin
-  Result := 'Static (FireDAC.Phys.SQLiteWrapper.FDEStat)';
+  Result := 'FireDAC.Phys.SQLiteWrapper.FDEStat';
 end;
 
 class function TSqlite3.OpenDatabase(const FileName: string; Password: string): ISqlite3Database;
@@ -1060,10 +1053,21 @@ end;
 
 {$ENDREGION}
 
+var
+  SQLCursor: TFDGUIxWaitCursor;
+
 Initialization
 begin
   SQLITE3_VERSION := TSqlite3.Version;
   FDManager.SilentMode := True;
+  SQLCursor := TFDGUIxWaitCursor.Create(nil);
+  {The Backup component (OpenIntoMemory) seems to ignore global Silent Mode, so create SQLCursor object to set WaitCursor...}
+  SQLCursor.ScreenCursor := gcrNone;
+end;
+
+Finalization
+begin
+  SQLCursor.Free;
 end;
 
 End.

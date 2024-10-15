@@ -60,15 +60,11 @@ begin
 end;
 
 procedure TMainForm.FormShow(Sender: TObject);
-var
-  S: TStopWatch;
 begin
-  S := TStopWatch.StartNew;
   ReadCsvIntoDatabase;
   FillCountryCombo;
   LoadListView;
   cbxCountry.ItemIndex := 0;
-  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
 end;
 
 procedure TMainForm.btnCloseClick(Sender: TObject);
@@ -97,7 +93,6 @@ begin
     LoadListView
   else
     LoadListView(cbxCountry.Text);
-  Memo1.Lines.Clear;
   Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
 end;
 
@@ -146,7 +141,10 @@ begin
 end;
 
 procedure TMainForm.LoadListView;
+var
+  S: TStopwatch;
 begin
+  S := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
   with DB.Prepare(
@@ -159,12 +157,16 @@ begin
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
+  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
   ListView1.Items.EndUpdate;
   ResizeColumns;
 end;
 
 procedure TMainForm.LoadListView(Country: string);
+var
+  S: TStopwatch;
 begin
+  S := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
   with DB.Prepare(
@@ -178,6 +180,7 @@ begin
     for var i := 1 to 6 do
       Item.SubItems.Add(SqlColumn[i].AsText);
   end);
+  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
   ListView1.Items.EndUpdate;
   ResizeColumns;
 end;

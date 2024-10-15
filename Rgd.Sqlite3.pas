@@ -1,10 +1,14 @@
 Unit Rgd.Sqlite3;
 
-{$DEFINE SQLITE_STATIC}
-
-{^^^ With SQLITE_STATIC is defined, then the sqlite3 library contained in FireDAC.Phys.SQLiteWrapper.Stat
-     will be statically linked into executable and a sqlite3.dll file will not be used/required.  As of
-     Delphi Version 12.2, this is Sqlite3 version 3.46.0}
+(******************************************************************************************************
+ *  By default, the sqlite3 library contained in FireDAC.Phys.SQLiteWrapper.Stat
+ *  will be statically linked into executable and a sqlite3.dll file will not be used/required.
+ *
+ *  Delphi 12.x includes Sqlite3 version 3.42.0.  I arbitrarily check for SQLite 3.42.0 and greater
+ *  based on Delphi 12.x. You may need to make adjustments to work with older versions.
+ *
+ *  To dynamically link sqlite3.dll, define SQLITE_USE_DLL
+ ******************************************************************************************************)
 
 Interface
 
@@ -16,8 +20,9 @@ uses
   System.Classes,
   System.SysUtils,
   System.StrUtils,
+  System.Math,
   System.Diagnostics
-  {$IFDEF SQLITE_STATIC},FireDAC.Phys.SQLiteWrapper.Stat{$ENDIF}
+  {$IFNDEF SQLITE_USE_DLL},FireDAC.Phys.SQLiteWrapper.Stat{$ENDIF}
   {$IFNDEF CONSOLE},Vcl.Dialogs, Vcl.Forms{$ENDIF};
 
 {$ENDREGION}
@@ -124,9 +129,11 @@ type
 
   {Column, Param Accessors...}
 
-  {Remark: TSqlParam and TSqlColumn are not intended to be declared as variables.
-           These types are return values for SqlColumn and SqlParam. The intent
-           is to support fluent style, such as Stmt.SqlColumn[i].AsText.}
+  (*************************************************************************************************
+   * TSqlParam and TSqlColumn are not intended to be declared as variables. These types are return
+   * values for SqlColumn and SqlParam. The intent is to support fluent style,
+   * such as Stmt.SqlColumn[i].AsText.
+   *************************************************************************************************)
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -150,7 +157,7 @@ type
     function AsInt64  : Int64;
     function AsText   : string;
     function ColName  : string;
-    function ColType  : Integer;
+    function ColType  : integer;
     function IsNull   : Boolean;
   end;
 
@@ -241,6 +248,19 @@ type
 
   {TSqlite3* classes implementing ISqlite3*...}
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
+    (***********************************************************************************************
+     * FYI: The TSqlite3Database object maintains a list of pointers to related ISqlite3Statement
+     *      interfaces in order to close finalize any open Statements prior to closing
+     *      the database connection.  This is usually not the case, but sometimes it is
+     *      hard to control when an ISqlite3Statement goes out of scope and gets destroyed
+     *      due to how anonomous method variable capture and with statements will extend the
+     *      life of variables until the end of the current method. In such cases, for example,
+     *      calling DB.Close in the same method where a ISqlite3Statement is still in scope would
+     *      fail due to having an unfinalized Statement handle. DB.Close will go ahead and conveniently
+     *      finalize any unfinalized statement handles prior to closing the database connection to
+     *      avoid this situation.
+     *      TODO: Add same for Blob Handles
+     ***********************************************************************************************)
   private
     FHandle: PSqlite3;
     FFilename: string;
@@ -332,13 +352,15 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
-    class function ThreadSafe: Boolean; static;
-    class function LibPath: string; static;
-    class function Version: DWORD; static;
-    class function VersionStr: string; static;
-    class function CompileOptions: string; static;
-    class function OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database; static;
-    class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database; static;
+  private
+    class var FSqliteVersion: string;
+  public
+    class function ThreadSafe: Boolean;
+    class function LibPath: string;
+    class function VersionStr: string;
+    class function CompileOptions: string;
+    class function OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
+    class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
   end;
 
 var
@@ -346,30 +368,56 @@ var
 
 Implementation
 
+function CompareVersions(const S1, S2: string): integer;
+var
+  Version: TStringDynArray;
+  Major1, Minor1, Release1, Build1: integer;
+  Major2, Minor2, Release2, Build2: integer;
+begin
+  Version := SplitString(S1, '.');
+  Major1 := Version[0].ToInteger;
+  Minor1   := 0;
+  if High(Version) >= 1 then
+    Minor1 := Version[1].ToInteger;
+  Release1 := 0;
+  if High(Version) >= 2 then
+    Release1 := Version[2].ToInteger;
+  Build1   := 0;
+  if High(Version) >= 3 then
+    Build1 := Version[3].ToInteger;
+
+  Version := SplitString(S1, '.');
+  Major2 := Version[0].ToInteger;
+  Minor2   := 0;
+  if High(Version) >= 1 then
+    Minor2 := Version[1].ToInteger;
+  Release2 := 0;
+  if High(Version) >= 2 then
+    Release2 := Version[2].ToInteger;
+  Build2   := 0;
+  if High(Version) >= 3 then
+    Build2 := Version[3].ToInteger;
+
+  Result := CompareValue(Major1, Major2);
+  if Result = 0 then
+  begin
+    Result := CompareValue(Minor1, Minor2);
+    if Result = 0 then
+    begin
+      Result := CompareValue(Release1, Release2);
+      if Result = 0 then
+      begin
+        Result := CompareValue(Build1, Build2);
+      end;
+    end;
+  end;
+end;
+
 {$REGION ' Sqlite DLL Api Externals '}
 
-(***********************************************************************
- *  This is the minimum set of sqlite3 definitions
- *  required to support this unit. (from sqlite3.h)
- *
- *  If linking Sqlite3 statically via FireDAC.Phys.SQLiteWrapper.Stat,
- *  then the Sqlite3 functions come from there.  Since I don't
- *  have the source code to FireDAC, I had to figure out the param
- *  types used by using the IDE editor hints.  I have since modified
- *  the dll function prototypes to match FireDAC in order to have a single
- *  unit that can switch between Static/DLL by defining SQLITE_STATIC.
- *  FireDac likes to use PByte instead of PAnsiChar, so some additional
- *  typecasting is needed below.
- *  FireDAC param types:
- *    PByte (System.Types) = System.Byte = ^Byte
- *    PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar
- *    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar
- ***********************************************************************)
 const
   SQL_NTS = -1;
   SQLITE_TRANSIENT = Pointer(-1);
-var
-  SQLITE3_VERSION: DWORD = 0; {Populated on INITIALIZATION, holds Major=Hi(SQLITE3_VERSION)(alwyays=3), Minor=Lo(SQLITE3_VERSION)}
 
 type
   PPAnsiCharArray = ^TPAnsiCharArray;
@@ -379,7 +427,22 @@ type
   PUtf8           = PAnsiChar;
   TSqlite3_Destroy_Callback = procedure(p: Pointer); cdecl;
 
-{$IFNDEF SQLITE_STATIC}
+(***************************************************************************************************
+ *  This is the subset of sqlite3 definitions required to support this unit.
+ *
+ *  If linking Sqlite3 statically via FireDAC.Phys.SQLiteWrapper.Stat, then the Sqlite3
+ *  functions come from there.  Since I don't have the source code to FireDAC, I had to figure
+ *  out the param types used by using the IDE editor hints.  I have since modified the non-static
+ *  dll function prototypes to be consistent match FireDAC in order to have a single unit that
+ *  can switch between Static/DLL by defining SQLITE_USE_DLL. FireDac likes to use PByte instead
+ *  of PAnsiChar, so some additional typecasting is needed below.
+ *  FireDAC param types:
+ *    PByte (System.Types) = System.Byte = ^Byte
+ *    PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar
+ *    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar
+ ***************************************************************************************************)
+
+{$IFDEF SQLITE_USE_DLL}
 function sqlite3_initialize: integer; cdecl; external 'sqlite3.dll';
 function sqlite3_libversion: PAnsiChar; cdecl; external 'sqlite3.dll';
 function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; cdecl; external 'sqlite3.dll';
@@ -392,6 +455,7 @@ function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; cdecl; 
 function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external 'sqlite3.dll';
 
 function sqlite3_exec(DB: PSqlite3; SQL: PByte; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external 'sqlite3.dll';
+function sqlite3_prepare_v2(DB: PSQLite3; zSql: PByte; nByte: Integer; out ppStmt: PSQLite3Stmt; var pzTail: PByte): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_prepare_v3(DB: PSQLite3; zSql: PUtf8; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; var pzTail: PByte): integer; cdecl; external 'sqlite3.dll' delayed;
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
@@ -610,26 +674,24 @@ begin
 end;
 
 procedure TSqlite3Database.Backup(const Filename: string);
-{Remark: Another way to backup a database is
-           ==> Execute('VACUUM INTO %s', [QuotedStr(Filename)]);
-         which was introduced in Sqlite3 version 3.27.0
+{Remark: VACUUM INTO was introduced in Sqlite3 version 3.27.0
          VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
-var
-  TempDB: ISqlite3Database;
-  Backup: PSqliteBackup;
+//var
+//  TempDB: ISqlite3Database;
+//  Backup: PSqliteBackup;
 begin
   DeleteFile(Filename);
-  if LoWord(SQLITE3_VERSION) >= 27 then
-    Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
-  else
-  begin
-    TempDB := TSqlite3Database.Create;
-    TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
-    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
-    Check(sqlite3_backup_step(Backup, -1));
-    Check(sqlite3_backup_finish(Backup));
-    TempDB.Close;
-  end;
+  Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
+
+{Old way...}
+//  begin
+//    TempDB := TSqlite3Database.Create;
+//    TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
+//    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
+//    Check(sqlite3_backup_step(Backup, -1));
+//    Check(sqlite3_backup_finish(Backup));
+//    TempDB.Close;
+//  end;
 end;
 
 procedure TSqlite3Database.Close;
@@ -767,7 +829,7 @@ end;
 
 {$REGION ' TSqlite3Statment '}
 
-constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = 0);
+constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT);
 {Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3.  We are using v3 so we can use
          the prep flag SQLITE_PREPARE_PERSISTENT.
          The Statically linked version does not have sqlite3_prepare_v3, so PrepFlags are ignore if present}
@@ -777,10 +839,13 @@ begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   pzTail := nil;
-  {$IFDEF SQLITE_STATIC}
-  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
+  {$IFDEF SQLITE_USE_DLL}
+  if (Prepflags <> SQLITE_PREPARE_DEFAULT) then
+    FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PUtf8(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, pzTail))
+  else
+    FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
   {$ELSE}
-  FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PUtf8(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, pzTail));
+  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
   {$ENDIF}
   FOwnerDatabase.StatementList.Add(Pointer(Self));
 end;
@@ -917,7 +982,7 @@ begin
            that will throw another exception. This way, if we are doing a bunch of StepAndReset inserts and we want to
            ignore a contraint violation and continue, we can. (TBD: Sqlite.org says if in a transaction
            you should rollback the transaction but this approach seems to let subsequent inserts work fine
-           and get committed if we handle/ignore the constraint violation. I need to verify this.)}
+           and get committed if we handle/ignore the constraint violation. TODO: I need to verify this.)}
   Result := sqlite3_step(FHandle);
   sqlite3_reset(FHandle); {Remark: Bypass Check here because we might want to ignore and continue on a constraint violation}
   Result := FOwnerDatabase.Check(Result);
@@ -994,55 +1059,33 @@ end;
 
 class function TSqlite3.VersionStr: string;
 begin
-  Result := UTF8ToString(sqlite3_libversion);
-end;
-
-class function TSqlite3.Version: DWORD;
-var
-  VerStr: string;
-  P1, P2: integer;
-  MajorVer: DWORD;
-  MinorVer: DWORD;
-begin
-  if SQLITE3_VERSION <> 0 then
-    Result := SQLITE3_VERSION
-  else
-  begin
-    VerStr := UTF8ToString(sqlite3_libversion);
-    P1 := PosEx('.', VerStr);
-    P2 := PosEx('.', VerStr, P1+1);
-    MajorVer := Copy(VerStr, 1, P1-1).ToInteger;
-    MinorVer := Copy(VerStr, P1+1, P2-P1-1).ToInteger;
-    Result := MinorVer or (MajorVer shl 16);
-  end;
+  if FSqliteVersion = '' then
+    FSqliteVersion := UTF8ToString(sqlite3_libversion);
+  Result := FSqliteVersion;
 end;
 
 class function TSqlite3.CompileOptions: string;
-const
-  CRLF = #13#10;
-var
-  TempDB: ISqlite3Database;
 begin
-  TempDB := TSqlite3.OpenDatabase(':memory:');
   Result := '';
-  with TempDB.Prepare('PRAGMA compile_options') do
-  while Step = SQLITE_ROW do
-    Result := Result + SqlColumn[0].AsText + CRLF;
+  with OpenDatabase(':memory:').Prepare('PRAGMA compile_options') do
+    while Step = SQLITE_ROW do
+      Result := Result + SqlColumn[0].AsText + #13#10;
 end;
 
-{$IFDEF SQLITE_STATIC}
+{$IFDEF SQLITE_USE_DLL}
 class function TSqlite3.LibPath: string;
-begin
-  Result := 'FireDAC.Phys.SQLiteWrapper.Stat';
-end;
-{$ELSE}
-class function TSqlite3.LibPath: string;
-var L: Integer;
+var
+  L: Integer;
 begin
   L := MAX_PATH + 1;
   SetLength(Result, L);
   L := GetModuleFileName(GetModuleHandle('sqlite3.dll'), Pointer(Result), L);
   SetLength(Result, L);
+end;
+{$ELSE}
+class function TSqlite3.LibPath: string;
+begin
+  Result := 'FireDAC.Phys.SQLiteWrapper.Stat';
 end;
 {$ENDIF}
 
@@ -1060,20 +1103,21 @@ end;
 
 class function TSqlite3.ThreadSafe: Boolean;
 begin
-  {$IFDEF SQLITE_STATIC}
-  Result := TRUE;
-  {$ELSE}
+  {$IFDEF SQLITE_USE_DLL}
   Result := sqlite3_threadsafe <> 0;
+  {$ELSE}
+  Result := TRUE;
   {$ENDIF}
 end;
 
 {$ENDREGION}
 
 Initialization
-const ErrMsg = 'Sqlite3.dll Version 3.20 or greater not found.  Application will terminate.';
+const
+  ErrMsg = 'Sqlite3.dll Version 3.42.0 or greater not found.  Application will terminate.';
 begin
-  SQLITE3_VERSION := TSqlite3.Version;
-  if LoWord(SQLITE3_VERSION) < 20 then
+  {$IFDEF SQLITE_USE_DLL}
+  if CompareVersions(TSqlite3.VersionStr, '3.42.0') < 0 then
   begin
     {$IFNDEF CONSOLE}
     ShowMessage(ErrMsg);
@@ -1084,6 +1128,7 @@ begin
     Halt;
     {$ENDIF}
   end;
+  {$ENDIF}
 end;
 
 End.

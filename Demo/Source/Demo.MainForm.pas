@@ -7,11 +7,11 @@ uses
   System.SysUtils,
   System.Diagnostics,
   System.StrUtils,
-  Rgd.Sqlite3,
   Vcl.Controls,
   Vcl.Forms,
   Vcl.ComCtrls,
   Vcl.StdCtrls,
+  Rgd.Sqlite3,
   Demo.SqliteInfoForm;
 
 type
@@ -77,7 +77,7 @@ const
   CRLF = #13#10;
 begin
   SqliteInfoForm.Memo1.Text :=
-    'Library: ' + TSqlite3.LibPath       + CRLF +
+    'Library: ' + TSqlite3.LibPath    + CRLF +
     'Version: ' + TSqlite3.VersionStr + CRLF +
     'Compiled Options:'               + CRLF +
     Trim(TSqlite3.CompileOptions);

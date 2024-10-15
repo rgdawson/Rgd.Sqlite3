@@ -1,19 +1,20 @@
 Unit Rgd.Sqlite3FDE;
 
-(***************************************************************************************************************************
- *  Remarks: FireDAC Encryption (FDE) Sqlite3 (v3.31.1)
+(***************************************************************************************************
+ * This is a variation of Rgd.Sqlite3.pas that links the Delphi FireDAC Encryption (FDE) version
+ * FireDAC.Phys.SQLiteWrapper.FDEStat. This statically linked pre-built version of Sqlite3 is
+ * version 3.31.1.  It last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC, which
+ * is the encryption mechanism that FireDAC uses. It was removed Feb 7, 2020 as part of version 3.32.0.
  *
- *      Statically links Sqlite with FireDAC Encryption via the inclusion of FireDAC.Phys.SQLiteWrapper.FDEStat.
- *      This pre-built version of Sqlite3 is last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC,
- *      which is the encryption mechanism that FireDAC uses.  It was removed Feb 7, 2020 as part of version 3.32.0.
+ * The approach taken here is to use a bit of FireDAC to create the connection (TFDConnection) to the
+ * database including the password.  Once that is done we get the native PSqlite3 handle from
+ * FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle and proceed as we do
+ * in Rgd.Sqlite3.
  *
- *      Here, we use FireDAC to create the DB connection using TFDConnection and get the native PSqlite3 database handle.
- *      The rest is the same as Rgd.Sqlite3.pas.  A TSqlite3 class function was added to set, change, remove the password.
- *
- *      There is still some work to finish:
- *          (1) Handle incorrect passwords - Maybe have DB.Open return True/False so we can easily create a retry loop
- *              for entering passwords.
- ***************************************************************************************************************************)
+ * There is still some work to be done:
+ *   (1) (TBD) Better handle incorrect passwords - Maybe have DB.Open return True/False so we can easily
+ *       create a retry loop for entering passwords.
+ ***************************************************************************************************)
 
 Interface
 
@@ -26,16 +27,15 @@ uses
   System.SysUtils,
   System.StrUtils,
   System.Diagnostics,
-  Rgd.StrUtils,
   FireDAC.Stan.Def,
   FireDAC.Stan.Intf,
   FireDAC.Comp.UI,
   FireDAC.Comp.Client,
-  FireDAC.UI.Intf,
   FireDAC.VCLUI.Wait,
   FireDAC.Phys.SQLite,
   FireDAC.Phys.SQLiteWrapper,
-  FireDAC.Phys.SQLiteWrapper.FDEStat;
+  FireDAC.Phys.SQLiteWrapper.FDEStat
+  {$IFNDEF CONSOLE},Vcl.Dialogs, Vcl.Forms{$ENDIF};
 
 {$ENDREGION}
 
@@ -141,9 +141,11 @@ type
 
   {Column, Param Accessors...}
 
-  {Remark: TSqlParam and TSqlColumn are not intended to be declared as variables.
-           These types are return values for SqlColumn and SqlParam. The intent
-           is to support fluent style, such as Stmt.SqlColumn[i].AsText.}
+  (*************************************************************************************************
+   * TSqlParam and TSqlColumn are not intended to be declared as variables. These types are return
+   * values for SqlColumn and SqlParam. The intent is to support fluent style,
+   * such as Stmt.SqlColumn[i].AsText.
+   *************************************************************************************************)
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -258,6 +260,19 @@ type
 
   {TSqlite3* classes implementing ISqlite3*...}
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
+    (***********************************************************************************************
+     * FYI: The TSqlite3Database object maintains a list of pointers to related ISqlite3Statement
+     *      interfaces in order to close finalize any open Statements prior to closing
+     *      the database connection.  This is usually not the case, but sometimes it is
+     *      hard to control when an ISqlite3Statement goes out of scope and gets destroyed
+     *      due to how anonomous method variable capture and with statements will extend the
+     *      life of variables until the end of the current method. In such cases, for example,
+     *      calling DB.Close in the same method where a ISqlite3Statement is still in scope would
+     *      fail due to having an unfinalized Statement handle. DB.Close will go ahead and conveniently
+     *      finalize any unfinalized statement handles prior to closing the database connection to
+     *      avoid this situation.
+     *      TODO: Add same for Blob Handles
+     ***********************************************************************************************)
   private
     FFDConnection: TFDConnection;
     FFilename: string;
@@ -349,14 +364,16 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
-    class function ThreadSafe: Boolean; static;
-    class function LibPath: string; static;
-    class function Version: DWORD; static;
-    class function VersionStr: string; static;
-    class function CompileOptions: string; static;
-    class function OpenDatabase(const FileName: string; Password: string): ISqlite3Database; static;
-    class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database; static;
-    class procedure ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
+    private
+      class var FSqliteVersion: string;
+    public
+      class function ThreadSafe: Boolean;
+      class function LibPath: string;
+      class function VersionStr: string;
+      class function CompileOptions: string;
+      class function OpenDatabase(const FileName: string; Password: string): ISqlite3Database;
+      class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
+      class procedure ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
   end;
 
 var
@@ -386,8 +403,6 @@ Implementation
 const
   SQL_NTS = -1;
   SQLITE_TRANSIENT = Pointer(-1);
-var
-  SQLITE3_VERSION: DWORD = 0; {Populated on INITIALIZATION, holds Major=Hi(SQLITE3_VERSION)(alwyays=3), Minor=Lo(SQLITE3_VERSION)}
 
 type
   PPAnsiCharArray = ^TPAnsiCharArray;
@@ -578,7 +593,7 @@ begin
     SqliteBackup.DriverLink := SqliteDriverLink;
     SqliteBackup.Database := FileName;
     SqliteBackup.Password := Password;
-    SqliteBackup.DestMode := smReadWrite;
+    SqliteBackup.DestMode := smCreate;
     SqliteBackup.DestDatabaseObj := FFDConnection.CliObj;
     SqliteBackup.DestPassword := Password;
     SqliteBackup.Backup;
@@ -963,45 +978,22 @@ end;
 
 class function TSqlite3.VersionStr: string;
 begin
-  Result := UTF8ToString(sqlite3_libversion);
-end;
-
-class function TSqlite3.Version: DWORD;
-var
-  VerStr: string;
-  P1, P2: integer;
-  MajorVer: DWORD;
-  MinorVer: DWORD;
-begin
-  if SQLITE3_VERSION <> 0 then
-    Result := SQLITE3_VERSION
-  else
-  begin
-    VerStr := UTF8ToString(sqlite3_libversion);
-    P1 := PosEx('.', VerStr);
-    P2 := PosEx('.', VerStr, P1+1);
-    MajorVer := Copy(VerStr, 1, P1-1).ToInteger;
-    MinorVer := Copy(VerStr, P1+1, P2-P1-1).ToInteger;
-    Result := MinorVer or (MajorVer shl 16);
-  end;
+  if FSqliteVersion = '' then
+    FSqliteVersion := UTF8ToString(sqlite3_libversion);
+  Result := FSqliteVersion;
 end;
 
 class function TSqlite3.CompileOptions: string;
-const
-  CRLF = #13#10;
-var
-  TempDB: ISqlite3Database;
 begin
-  TempDB := TSqlite3.OpenDatabase(':memory:', '');
   Result := '';
-  with TempDB.Prepare('PRAGMA compile_options') do
-  while Step = SQLITE_ROW do
-    Result := Result + SqlColumn[0].AsText + CRLF;
+  with OpenDatabase(':memory:', '').Prepare('PRAGMA compile_options') do
+    while Step = SQLITE_ROW do
+      Result := Result + SqlColumn[0].AsText + #13#10;
 end;
 
 class function TSqlite3.LibPath: string;
 begin
-  Result := 'FireDAC.Phys.SQLiteWrapper.FDEStat';
+  Result := 'Static (FireDAC.Phys.SQLiteWrapper.FDEStat)';
 end;
 
 class function TSqlite3.OpenDatabase(const FileName: string; Password: string): ISqlite3Database;
@@ -1053,21 +1045,9 @@ end;
 
 {$ENDREGION}
 
-var
-  SQLCursor: TFDGUIxWaitCursor;
-
 Initialization
 begin
-  SQLITE3_VERSION := TSqlite3.Version;
   FDManager.SilentMode := True;
-  SQLCursor := TFDGUIxWaitCursor.Create(nil);
-  {The Backup component (OpenIntoMemory) seems to ignore global Silent Mode, so create SQLCursor object to set WaitCursor...}
-  SQLCursor.ScreenCursor := gcrNone;
-end;
-
-Finalization
-begin
-  SQLCursor.Free;
 end;
 
 End.

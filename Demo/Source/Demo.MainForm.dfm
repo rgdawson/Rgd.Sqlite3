@@ -39,6 +39,7 @@ object MainForm: TMainForm
     Top = 479
     Width = 34
     Height = 15
+    Anchors = [akRight, akBottom]
     Caption = 'Label1'
   end
   object ListView1: TListView

@@ -604,26 +604,24 @@ begin
 end;
 
 procedure TSqlite3Database.Backup(const Filename: string);
-{Remark: Another way to backup a database is
-           ==> Execute('VACUUM INTO %s', [QuotedStr(Filename)]);
-         which was introduced in Sqlite3 version 3.27.0
+{Remark: VACUUM INTO was introduced in Sqlite3 version 3.27.0
          VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
-var
-  TempDB: ISqlite3Database;
-  Backup: PSqliteBackup;
+//var
+//  TempDB: ISqlite3Database;
+//  Backup: PSqliteBackup;
 begin
   DeleteFile(Filename);
-  if LoWord(SQLITE3_VERSION) >= 27 then
-    Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
-  else
-  begin
-    TempDB := TSqlite3Database.Create;
-    TempDB.Open(FileName, '');
-    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
-    Check(sqlite3_backup_step(Backup, -1));
-    Check(sqlite3_backup_finish(Backup));
-    TempDB.Close;
-  end;
+  Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
+
+{Old way...}
+//  begin
+//    TempDB := TSqlite3Database.Create;
+//    TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
+//    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
+//    Check(sqlite3_backup_step(Backup, -1));
+//    Check(sqlite3_backup_finish(Backup));
+//    TempDB.Close;
+//  end;
 end;
 
 procedure TSqlite3Database.Close;

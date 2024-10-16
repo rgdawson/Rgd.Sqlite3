@@ -991,7 +991,7 @@ end;
 
 class function TSqlite3.LibPath: string;
 begin
-  Result := 'Static (FireDAC.Phys.SQLiteWrapper.FDEStat)';
+  Result := 'FireDAC.Phys.SQLiteWrapper.FDEStat';
 end;
 
 class function TSqlite3.OpenDatabase(const FileName: string; Password: string): ISqlite3Database;

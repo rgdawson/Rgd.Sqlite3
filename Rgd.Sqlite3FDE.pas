@@ -179,6 +179,7 @@ type
     {Getters...}
     function GetHandle: PSqlite3;
     function GetFilename: string;
+    function GetBlobHandlerList: TList;
     function GetStatementList: TList;
     function GetTransactionOpen: Boolean;
     {Error Checking...}
@@ -210,6 +211,7 @@ type
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
     {Properties...}
     property StatementList: TList read GetStatementList;
+    property BlobHandlerList: TList read GetBlobHandlerList;
     property TransactionOpen: Boolean read GetTransactionOpen;
     property Handle: PSqlite3 read GetHandle;
     property Filename: string read GetFilename;
@@ -262,8 +264,8 @@ type
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
     (***********************************************************************************************
      * FYI: The TSqlite3Database object maintains a list of pointers to related ISqlite3Statement
-     *      interfaces in order to close finalize any open Statements prior to closing
-     *      the database connection.  This is usually not the case, but sometimes it is
+     *      and ISqlite3BlobHandler interfaces in order to close finalize any open Statements prior
+     *      to closing the database connection.  This is usually not the case, but sometimes it is
      *      hard to control when an ISqlite3Statement goes out of scope and gets destroyed
      *      due to how anonomous method variable capture and with statements will extend the
      *      life of variables until the end of the current method. In such cases, for example,
@@ -271,17 +273,18 @@ type
      *      fail due to having an unfinalized Statement handle. DB.Close will go ahead and conveniently
      *      finalize any unfinalized statement handles prior to closing the database connection to
      *      avoid this situation.
-     *      TODO: Add same for Blob Handles
      ***********************************************************************************************)
   private
     FFDConnection: TFDConnection;
     FFilename: string;
     FTransactionOpen: Boolean;
     FStatementList: TList;
+    FBlobHandlerList: TList;
     {Getters...}
     function GetHandle: PSqlite3;
     function GetFilename: string;
     function GetStatementList: TList;
+    function GetBlobHandlerList: TList;
     function GetTransactionOpen: Boolean;
     {Error Checking...}
     function Check(const ErrCode: integer): integer;
@@ -526,12 +529,14 @@ end;
 constructor TSqlite3Database.Create;
 begin
   FFDConnection := TFDConnection.Create(nil);
+  FBlobHandlerList := TList.Create;
   FStatementList := TList.Create;
 end;
 
 destructor TSqlite3Database.Destroy;
 begin
   FFDConnection.Free; {I'm guessing that the TFDConnection.Destroy calls close}
+  FBlobHandlerList.Free;
   FStatementList.Free;
   inherited;
 end;
@@ -568,6 +573,11 @@ end;
 function TSqlite3Database.GetStatementList: TList;
 begin
   Result := FStatementList;
+end;
+
+function TSqlite3Database.GetBlobHandlerList: TList;
+begin
+  Result := FBlobHandlerList;
 end;
 
 procedure TSqlite3Database.Open(const FileName: string; Password: string = '');
@@ -632,12 +642,23 @@ begin
   begin
     if FTransactionOpen then
       Rollback;
-    for i := FStatementList.Count - 1 downto 0 do
+
+    {Close any remaining Blob Handles...}
+    for i := FStatementList.Count-1 downto 0 do
     begin
       sqlite3_finalize(TSqlite3Statement(FStatementList[i]).FHandle);
       TSqlite3Statement(FStatementList[i]).FHandle := nil;
       FStatementList.Remove(FStatementList[i]);
     end;
+
+    {Close any remaining Blob Handles...}
+    for i := FBlobHandlerList.Count-1 downto 0 do
+    begin
+      sqlite3_blob_close(TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle);
+      TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle := nil;
+      FBlobHandlerList.Remove(FBlobHandlerList[i]);
+    end;
+
     FFDConnection.Close;
     FFilename := '';
   end;
@@ -937,11 +958,16 @@ begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PUtf8(UTF8Encode(Table)), PUtf8(UTF8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
+  FOwnerDatabase.BlobHandlerList.Add(Self);
 end;
 
 destructor TSqlite3BlobHandler.Destroy;
 begin
-  sqlite3_blob_close(FHandle);
+  if Assigned(Self.FHandle) then
+  begin
+    sqlite3_blob_close(FHandle);
+    FOwnerDatabase.BlobHandlerList.Remove(Self);
+  end;
   inherited;
 end;
 

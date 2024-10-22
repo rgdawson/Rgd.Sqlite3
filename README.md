@@ -77,7 +77,7 @@ Create Datatabase pattern...
       Stmt_Description := DB.Prepare(
         'SELECT Description' +
         '  FROM Organizations' +
-        ' WHERE Name = ?', SQLITE_PREPARE_PERSISTENT);
+        ' WHERE Name = ?');
     end;
   
 Example: inserting records from a CSV file...

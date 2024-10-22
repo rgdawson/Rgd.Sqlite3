@@ -22,11 +22,9 @@ uses
   System.StrUtils,
   System.Math,
   {$IFDEF SQLITE_USE_DLL}
-    {$IFNDEF CONSOLE}
-    Vcl.Dialogs, Vcl.Forms,
-    {$ENDIF}
+    {$IFNDEF CONSOLE}Vcl.Dialogs, Vcl.Forms,{$ENDIF}
   {$ELSE}
-  FireDAC.Phys.SQLiteWrapper.Stat, Vcl.Dialogs, Vcl.Forms,
+    FireDAC.Phys.SQLiteWrapper.Stat,
   {$ENDIF}
   System.Diagnostics;
 
@@ -98,12 +96,6 @@ const
   SQLITE_OPEN_WAL            = $00080000;
   SQLITE_OPEN_NOFOLLOW       = $01000000;
   SQLITE_OPEN_DEFAULT        = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE;
-
-  {Sqlite Prepare Flags...}
-  SQLITE_PREPARE_DEFAULT    = $00;
-  SQLITE_PREPARE_PERSISTENT = $01;
-  SQLITE_PREPARE_NORMALIZE  = $02; {deprecated, no-op}
-  SQLITE_PREPARE_NO_VTAB    = $04;
 
 type
   {Sqlite pointer types...}
@@ -184,8 +176,8 @@ type
     procedure Close;
     procedure Backup(const Filename: string);
     {Prepare...}
-    function Prepare(const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
-    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
+    function Prepare(const SQL: string): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
     {Transactions...}
     procedure BeginTransaction;
     procedure Commit;
@@ -288,8 +280,8 @@ type
     procedure OpenIntoMemory(const FileName: string);
     procedure Backup(const Filename: string);
     {Prepare SQL...}
-    function Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement; overload;
-    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement; overload;
+    function Prepare(const SQL: string): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
     {Transactions...}
     procedure BeginTransaction;
     procedure Commit;
@@ -338,7 +330,7 @@ type
     function SqlColumnCount: integer;
   public
     {Constructor/Destructor}
-    constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT);
+    constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string);
     destructor Destroy; override;
   end;
 
@@ -464,7 +456,6 @@ function sqlite3_backup_finish(p: PSqliteBackup): integer; cdecl; external 'sqli
 
 function sqlite3_exec(DB: PSqlite3; SQL: PByte; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_prepare_v2(DB: PSQLite3; zSql: PByte; nByte: Integer; out ppStmt: PSQLite3Stmt; var pzTail: PByte): integer; cdecl; external 'sqlite3.dll';
-function sqlite3_prepare_v3(DB: PSQLite3; zSql: PUtf8; nByte: Integer; prepFlags: Cardinal; out ppStmt: PSQLite3Stmt; var pzTail: PByte): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; cdecl; external 'sqlite3.dll';
@@ -670,7 +661,8 @@ begin
   Close;
   Check(sqlite3_open_v2(PUtf8(UTF8Encode(FileName)), FHandle, OpenFlags, nil));
   FFilename := FileName;
-  Execute('PRAGMA foreign_keys = ON');
+  Execute('PRAGMA foreign_keys = on');
+  Execute('PRAGMA synchronous = normal');
 end;
 
 procedure TSqlite3Database.OpenIntoMemory(const FileName: string);
@@ -681,7 +673,7 @@ begin
   TempDB := TSqlite3Database.Create;
   Open(':memory:', SQLITE_OPEN_DEFAULT);
   FFilename := FileName;
-  TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
+  TempDB.Open(FileName, SQLITE_OPEN_READONLY);
   Backup := sqlite3_backup_init(Handle, PByte(PAnsiChar('main')), TempDB.Handle, PByte(PAnsiChar('main')));
   sqlite3_backup_step(Backup, -1);
   sqlite3_backup_finish(Backup);
@@ -691,22 +683,9 @@ end;
 procedure TSqlite3Database.Backup(const Filename: string);
 {Remark: VACUUM INTO was introduced in Sqlite3 version 3.27.0
          VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
-//var
-//  TempDB: ISqlite3Database;
-//  Backup: PSqliteBackup;
 begin
   DeleteFile(Filename);
-  Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
-
-{Old way...}
-//  begin
-//    TempDB := TSqlite3Database.Create;
-//    TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
-//    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
-//    Check(sqlite3_backup_step(Backup, -1));
-//    Check(sqlite3_backup_finish(Backup));
-//    TempDB.Close;
-//  end;
+  Execute('VACUUM INTO %s', [QuotedStr(Filename)])
 end;
 
 procedure TSqlite3Database.Close;
@@ -715,48 +694,49 @@ var
 begin
   if Assigned(FHandle) then
   begin
-    {Rollback if transaction left open (sqlite will do this automatically, but we are doing it explcitly anyway)...}
+    {Rollback if transaction left open (sqlite should do this automatically, but we are doing it explcitly anyway)...}
     if FTransactionOpen then
       Rollback;
 
-    {Finalize any remaining open Stmt handles...}
+    {Finalize, if any, remaining open Stmt handles...}
     for i := FStatementList.Count-1 downto 0 do
     begin
       sqlite3_finalize(TSqlite3Statement(FStatementList[i]).FHandle);
       TSqlite3Statement(FStatementList[i]).FHandle := nil;
-      FStatementList.Remove(FStatementList[i]);
+      FStatementList.Delete(i);
     end;
 
-    {Close any remaining Blob Handles...}
-    for i := FBlobHandlerList.Count-1 downto 0 do
+    {Close, if  any, remaining open Blob handlers...}
+    for i := 0 to FBlobHandlerList.Count-1 do
     begin
       sqlite3_blob_close(TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle);
       TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle := nil;
-      FBlobHandlerList.Remove(FBlobHandlerList[i]);
+      FBlobHandlerList.Delete(i);
     end;
 
     {Close Database...}
-    Check(sqlite3_close(Handle)); {Note: close will return SQLITE_BUSY if all statment handles are not aslready destroyed/finalized...}
+    Check(sqlite3_close(Handle));
     FHandle := nil;
     FFilename := '';
   end;
 end;
 
-function TSqlite3Database.Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement;
+function TSqlite3Database.Prepare(const SQL: string): ISqlite3Statement;
 begin
   CheckHandle;
-  Result := TSQLite3Statement.Create(Self, SQL, PrepFlags);
+  Result := TSQLite3Statement.Create(Self, SQL);
 end;
 
-function TSqlite3Database.Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement;
+function TSqlite3Database.Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement;
 begin
-  Result := Prepare(Format(SQL, FmtParams), PrepFlags);
+  Result := Prepare(Format(SQL, FmtParams));
 end;
 
 procedure TSqlite3Database.Fetch(const SQL: string; const StmtProc: TStmtProc);
-var Stmt: ISqlite3Statement;
+var
+  Stmt: ISqlite3Statement;
 begin
-  Stmt := Prepare(SQL, SQLITE_PREPARE_DEFAULT);
+  Stmt := Prepare(SQL);
   while Stmt.Step = SQLITE_ROW do
     StmtProc(Stmt);
 end;
@@ -769,7 +749,7 @@ end;
 function TSqlite3Database.FetchCount(const SQL: string): integer;
 begin
   Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
-  with Prepare(SQL, SQLITE_PREPARE_DEFAULT) do
+  with Prepare(SQL) do
   begin
     Step;
     Result := SqlColumn[0].AsInt;
@@ -852,29 +832,21 @@ end;
 
 {$REGION ' TSqlite3Statment '}
 
-constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT);
-{Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3.  We are using v3 so we can use
-         the prep flag SQLITE_PREPARE_PERSISTENT.
-         The Statically linked version does not have sqlite3_prepare_v3, so PrepFlags are ignore if present}
+constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string);
 var
   pzTail: PByte;
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   pzTail := nil;
-  {$IFDEF SQLITE_USE_DLL}
-  if (Prepflags <> SQLITE_PREPARE_DEFAULT) then
-    FOwnerDatabase.Check(sqlite3_prepare_v3(FOwnerDatabase.Handle, PUtf8(UTF8Encode(SQL)), SQL_NTS, PrepFlags, FHandle, pzTail))
-  else
-    FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
-  {$ELSE}
   FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
-  {$ENDIF}
   FOwnerDatabase.StatementList.Add(Pointer(Self));
 end;
 
 destructor TSQLite3Statement.Destroy;
 begin
+  {It is possible that a call to DB.Close could finalize before we get here,
+   So we need to check if Assigned(Self.Handle)}
   if Assigned(Self.FHandle) then
   begin
     FOwnerDatabase.StatementList.Remove(Pointer(Self));
@@ -1048,7 +1020,7 @@ end;
 
 destructor TSqlite3BlobHandler.Destroy;
 begin
-  if Assigned(Self.FHandle) then
+  if Assigned(FHandle) then
   begin
     sqlite3_blob_close(FHandle);
     FOwnerDatabase.BlobHandlerList.Remove(Self);

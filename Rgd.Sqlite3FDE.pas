@@ -106,12 +106,6 @@ const
   SQLITE_OPEN_NOFOLLOW       = $01000000;
   SQLITE_OPEN_DEFAULT        = SQLITE_OPEN_READWRITE or SQLITE_OPEN_CREATE;
 
-  {Sqlite Prepare Flags...}
-  SQLITE_PREPARE_DEFAULT    = $00;
-  SQLITE_PREPARE_PERSISTENT = $01;
-  SQLITE_PREPARE_NORMALIZE  = $02; {deprecated, no-op}
-  SQLITE_PREPARE_NO_VTAB    = $04;
-
 type
   {Sqlite pointer types...}
   PSqlite3     = Pointer;
@@ -616,22 +610,9 @@ end;
 procedure TSqlite3Database.Backup(const Filename: string);
 {Remark: VACUUM INTO was introduced in Sqlite3 version 3.27.0
          VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
-//var
-//  TempDB: ISqlite3Database;
-//  Backup: PSqliteBackup;
 begin
   DeleteFile(Filename);
   Execute('VACUUM INTO %s', [QuotedStr(Filename)]) {introduced in version 3.27.0}
-
-{Old way...}
-//  begin
-//    TempDB := TSqlite3Database.Create;
-//    TempDB.Open(FileName, SQLITE_OPEN_DEFAULT);
-//    Backup := sqlite3_backup_init(TempDB.Handle, PByte(PAnsiChar('main')), Handle, PByte(PAnsiChar('main')));
-//    Check(sqlite3_backup_step(Backup, -1));
-//    Check(sqlite3_backup_finish(Backup));
-//    TempDB.Close;
-//  end;
 end;
 
 procedure TSqlite3Database.Close;
@@ -640,23 +621,24 @@ var
 begin
   if FFDConnection.Connected then
   begin
+    {Rollback if transaction left open (sqlite should do this automatically, but we are doing it explcitly anyway)...}
     if FTransactionOpen then
       Rollback;
 
-    {Close any remaining Blob Handles...}
+    {Finalize, if any, remaining open Stmt handles...}
     for i := FStatementList.Count-1 downto 0 do
     begin
       sqlite3_finalize(TSqlite3Statement(FStatementList[i]).FHandle);
       TSqlite3Statement(FStatementList[i]).FHandle := nil;
-      FStatementList.Remove(FStatementList[i]);
+      FStatementList.Delete(i);
     end;
 
-    {Close any remaining Blob Handles...}
-    for i := FBlobHandlerList.Count-1 downto 0 do
+    {Close, if  any, remaining open Blob handlers...}
+    for i := 0 to FBlobHandlerList.Count-1 do
     begin
       sqlite3_blob_close(TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle);
       TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle := nil;
-      FBlobHandlerList.Remove(FBlobHandlerList[i]);
+      FBlobHandlerList.Delete(i);
     end;
 
     FFDConnection.Close;
@@ -963,7 +945,7 @@ end;
 
 destructor TSqlite3BlobHandler.Destroy;
 begin
-  if Assigned(Self.FHandle) then
+  if Assigned(FHandle) then
   begin
     sqlite3_blob_close(FHandle);
     FOwnerDatabase.BlobHandlerList.Remove(Self);

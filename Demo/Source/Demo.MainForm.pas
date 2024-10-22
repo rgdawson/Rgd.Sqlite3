@@ -24,6 +24,7 @@ type
     ListView1  : TListView;
     Memo1      : TMemo;
     Label1     : TLabel;
+    Label4: TLabel;
     procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure btnCloseClick(Sender: TObject);
@@ -85,15 +86,11 @@ begin
 end;
 
 procedure TMainForm.cbxCountryClick(Sender: TObject);
-var
-  S: TStopwatch;
 begin
-  S := TStopWatch.StartNew;
   if cbxCountry.Text = ALL_COUNTRIES then
     LoadListView
   else
     LoadListView(cbxCountry.Text);
-  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
 end;
 
 procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -106,9 +103,7 @@ end;
 
 procedure TMainForm.CreateDatabase;
 begin
-  DB := TSqlite3Database.Create;
-  DB.Open(':memory:');
-
+  DB := TSqlite3.OpenDatabase(':memory:');
   {Create Table...}
   DB.Execute(
     ' CREATE TABLE Organizations ( ' +
@@ -142,45 +137,73 @@ end;
 
 procedure TMainForm.LoadListView;
 var
-  S: TStopwatch;
+  S: TStopWatch;
+  S0: string;
 begin
-  S := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
-  ListView1.Clear;
-  with DB.Prepare(
-    'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
-    '  FROM Organizations' +
-    ' ORDER BY 2') do Fetch(procedure
-  begin
-    var Item := ListView1.Items.Add;
-    Item.Caption := SqlColumn[0].AsText;
-    for var i := 1 to 6 do
-      Item.SubItems.Add(SqlColumn[i].AsText);
-  end);
-  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
-  ListView1.Items.EndUpdate;
+  try
+    ListView1.Clear;
+    S := TStopWatch.StartNew;
+    with DB.Prepare(
+      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
+      '  FROM Organizations' +
+      ' ORDER BY 2') do Fetch(procedure
+    begin
+      S.Stop;
+      var Item := ListView1.Items.Add;
+      S.Start;
+      S0 := SqlColumn[0].AsText;
+      S.Stop;
+      Item.Caption := S0;
+      S.Start;
+      for var i := 1 to 6 do
+      begin
+        S0 := SqlColumn[i].AsText;
+        S.Stop;
+        Item.SubItems.Add(S0);
+        S.Start;
+      end;
+    end);
+    Label1.Caption := Format('Query: %0.3fms', [S.Elapsed.TotalMilliseconds]);
+  finally
+    ListView1.Items.EndUpdate;
+  end;
   ResizeColumns;
 end;
 
 procedure TMainForm.LoadListView(Country: string);
 var
   S: TStopwatch;
+  S0: string;
 begin
   S := TStopWatch.StartNew;
   ListView1.Items.BeginUpdate;
   ListView1.Clear;
+  S := TStopWatch.StartNew;
   with DB.Prepare(
     'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
     '  FROM Organizations' +
     ' WHERE Country = ?' +
     ' ORDER BY 2') do BindAndFetch([Country], procedure
   begin
+    S.Stop;
     var Item := ListView1.Items.Add;
-    Item.Caption := SqlColumn[0].AsText;
+    S.Start;
+    S0 := SqlColumn[0].AsText;
+    S.Stop;
+    Item.Caption := S0;
+    S.Start;
     for var i := 1 to 6 do
-      Item.SubItems.Add(SqlColumn[i].AsText);
+    begin
+      S0 := SqlColumn[i].AsText;
+      S.Stop;
+      Item.SubItems.Add(S0);
+      S.Start;
+    end;
   end);
-  Label1.Caption := Format('%dms', [S.ElapsedMilliseconds]);
+  S.Stop;
+  Label1.Caption := Format('Query: %0.3fms', [S.Elapsed.TotalMilliseconds]);
+//  Label1.Caption := Format('%sms', [S.Elapsed.ToString]);
   ListView1.Items.EndUpdate;
   ResizeColumns;
 end;
@@ -188,13 +211,15 @@ end;
 procedure TMainForm.ReadCsvIntoDatabase;
 var
   Lines, Values: TStringlist;
+  SW: TStopWatch;
 begin
+  SW := TStopWatch.StartNew;
+
+  CreateDatabase;
   Lines := TStringlist.Create;
   Values := TStringlist.Create;
   Values.StrictDelimiter := True;
-
   try
-    CreateDatabase;
     Lines.LoadFromFile('organizations-1000.csv', TEncoding.UTF8);
     Lines.Delete(0); {Ignore Header}
 
@@ -215,13 +240,13 @@ begin
     Values.Free;
     Lines.Free;
   end;
-
   DB.Execute('ANALYZE');
 
   Stmt_Description := DB.Prepare(
     'SELECT Description'   +
     '  FROM Organizations' +
     ' WHERE OrgID = ?');
+  Label4.Caption := Format('Import CSV: %0.3fms', [SW.Elapsed.TotalMilliseconds]);
 end;
 
 procedure TMainForm.ResizeColumns;

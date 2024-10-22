@@ -35,16 +35,24 @@ object MainForm: TMainForm
     Caption = 'Country'
   end
   object Label1: TLabel
-    Left = 681
-    Top = 479
+    Left = 816
+    Top = 477
     Width = 34
     Height = 15
     Anchors = [akRight, akBottom]
     Caption = 'Label1'
   end
+  object Label4: TLabel
+    Left = 681
+    Top = 477
+    Width = 34
+    Height = 15
+    Anchors = [akRight, akBottom]
+    Caption = 'Label4'
+  end
   object ListView1: TListView
     Left = 8
-    Top = 39
+    Top = 37
     Width = 904
     Height = 434
     Anchors = [akLeft, akTop, akRight, akBottom]

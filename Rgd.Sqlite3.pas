@@ -971,16 +971,8 @@ end;
 
 function TSQLite3Statement.StepAndReset: integer;
 begin
-  {Remark: We are using sqlite3_prepare_v2/v3, So we will get result code immediately without having to call reset to get it.
-           We want to call reset in any case, so we are calling reset before actually checking the result of
-           Step and potentially raising an exception. And we are not checking the result of reset because
-           that will throw another exception. This way, if we are doing a bunch of StepAndReset inserts and we want to
-           ignore a contraint violation and continue, we can. (TBD: Sqlite.org says if in a transaction
-           you should rollback the transaction but this approach seems to let subsequent inserts work fine
-           and get committed if we handle/ignore the constraint violation. TODO: I need to verify this.)}
-  Result := sqlite3_step(FHandle);
-  sqlite3_reset(FHandle); {Remark: Bypass Check here because we might want to ignore and continue on a constraint violation}
-  Result := FOwnerDatabase.Check(Result);
+  Result := FOwnerDatabase.Check(sqlite3_step(FHandle));
+  Reset;
 end;
 
 procedure TSQLite3Statement.Reset;

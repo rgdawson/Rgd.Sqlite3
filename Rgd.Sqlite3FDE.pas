@@ -11,8 +11,8 @@ Unit Rgd.Sqlite3FDE;
  * FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle and proceed as we do
  * in Rgd.Sqlite3.
  *
- * There is still some work to be done:
- *   (1) (TBD) Better handle incorrect passwords - Maybe have DB.Open return True/False so we can easily
+ * TODO - There is still some work to be done:
+ *   (1) (TBD) Facilitate handling incorrect passwords - Maybe have DB.Open return True/False so we can easily
  *       create a retry loop for entering passwords.
  ***************************************************************************************************)
 
@@ -185,8 +185,8 @@ type
     procedure Close;
     procedure Backup(const Filename: string);
     {Prepare...}
-    function Prepare(const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
-    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT): ISqlite3Statement; overload;
+    function Prepare(const SQL: string): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
     {Transactions...}
     procedure BeginTransaction;
     procedure Commit;
@@ -289,8 +289,8 @@ type
     procedure Close;
     procedure Backup(const Filename: string);
     {Prepare SQL...}
-    function Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement; overload;
-    function Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement; overload;
+    function Prepare(const SQL: string): ISqlite3Statement; overload;
+    function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
     {Transactions...}
     procedure BeginTransaction;
     procedure Commit;
@@ -339,7 +339,7 @@ type
     function SqlColumnCount: integer;
   public
     {Constructor/Destructor}
-    constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = SQLITE_PREPARE_DEFAULT);
+    constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string);
     destructor Destroy; override;
   end;
 
@@ -646,21 +646,21 @@ begin
   end;
 end;
 
-function TSqlite3Database.Prepare(const SQL: string; PrepFlags: Cardinal): ISqlite3Statement;
+function TSqlite3Database.Prepare(const SQL: string): ISqlite3Statement;
 begin
   CheckHandle;
-  Result := TSQLite3Statement.Create(Self, SQL, PrepFlags);
+  Result := TSQLite3Statement.Create(Self, SQL);
 end;
 
-function TSqlite3Database.Prepare(const SQL: string; const FmtParams: array of const; PrepFlags: Cardinal): ISqlite3Statement;
+function TSqlite3Database.Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement;
 begin
-  Result := Prepare(Format(SQL, FmtParams), PrepFlags);
+  Result := Prepare(Format(SQL, FmtParams));
 end;
 
 procedure TSqlite3Database.Fetch(const SQL: string; const StmtProc: TStmtProc);
 var Stmt: ISqlite3Statement;
 begin
-  Stmt := Prepare(SQL, SQLITE_PREPARE_DEFAULT);
+  Stmt := Prepare(SQL);
   while Stmt.Step = SQLITE_ROW do
     StmtProc(Stmt);
 end;
@@ -673,7 +673,7 @@ end;
 function TSqlite3Database.FetchCount(const SQL: string): integer;
 begin
   Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
-  with Prepare(SQL, SQLITE_PREPARE_DEFAULT) do
+  with Prepare(SQL) do
   begin
     Step;
     Result := SqlColumn[0].AsInt;
@@ -756,10 +756,7 @@ end;
 
 {$REGION ' TSqlite3Statment '}
 
-constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string; PrepFlags: Cardinal = 0);
-{Remark: Minimum version of SQlite3 is 3.20 to use sqlite3_prepare_v3.  We are using v3 so we can use
-         the prep flag SQLITE_PREPARE_PERSISTENT.
-         The Statically linked version does not have sqlite3_prepare_v3, so PrepFlags are ignore if present}
+constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string);
 var
   pzTail: PByte;
 begin
@@ -896,16 +893,8 @@ end;
 
 function TSQLite3Statement.StepAndReset: integer;
 begin
-  {Remark: We are using sqlite3_prepare_v2/v3, So we will get result code without having to call reset to get it.
-           We want to call reset in any case, so we are calling reset before actually checking the result of
-           Step and potentially raising an exception. And we are not checking the result of reset because
-           that will throw another exception. This way, if we are doing a bunch of StepAndReset inserts and we want to
-           ignore a contraint violation and continue, we can. (TBD: Sqlite.org says if in a transaction
-           you should rollback the transaction but this approach seems to let subsequent inserts work fine
-           and get committed if we handle/ignore the constraint violation. I need to verify this.)}
-  Result := sqlite3_step(FHandle);
-  sqlite3_reset(FHandle); {Remark: Bypass Check here because we might want to ignore and continue on a constraint violation}
-  Result := FOwnerDatabase.Check(Result);
+  Result := FOwnerDatabase.Check(sqlite3_step(FHandle));
+  Reset;
 end;
 
 procedure TSQLite3Statement.Reset;

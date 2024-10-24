@@ -1,17 +1,19 @@
 Unit Demo.MainForm;
 
+{.$DEFINE DEMO_FDE}   {Define this to demo the FDE version of SQlite3}
+
 Interface
 
 uses
   System.Classes,
   System.SysUtils,
-  System.Diagnostics,
   System.StrUtils,
+  System.Diagnostics,
   Vcl.Controls,
   Vcl.Forms,
   Vcl.ComCtrls,
   Vcl.StdCtrls,
-  Rgd.Sqlite3,
+  {$IFNDEF DEMO_FDE}Rgd.Sqlite3,{$ELSE}Rgd.Sqlite3FDE,{$ENDIF}
   Demo.SqliteInfoForm;
 
 type
@@ -33,7 +35,7 @@ type
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
   private
     Stmt_Description: ISqlite3Statement;
-    procedure CreateDatabase;
+    procedure InitDatabase;
     procedure FillCountryCombo;
     procedure LoadListView; overload;
     procedure LoadListView(Country: string); overload;
@@ -50,10 +52,10 @@ Implementation
 
 {$R *.dfm}
 
-{$REGION ' Events '}
-
 const
   ALL_COUNTRIES = '-- All Countries --';
+
+{$REGION ' Events '}
 
 procedure TMainForm.FormResize(Sender: TObject);
 begin
@@ -100,24 +102,6 @@ begin
 end;
 
 {$ENDREGION}
-
-procedure TMainForm.CreateDatabase;
-begin
-  DB := TSqlite3.OpenDatabase(':memory:');
-  {Create Table...}
-  DB.Execute(
-    ' CREATE TABLE Organizations ( ' +
-    '   OrgID            TEXT NOT NULL,' +
-    '   Name             TEXT,' +
-    '   Website          TEXT,' +
-    '   Country          TEXT,' +
-    '   Description      TEXT,' +
-    '   Founded          TEXT,' +
-    '   Industry         TEXT,' +
-    '   EmployeeCount    INTEGER,' +
-    ' PRIMARY KEY (OrgID ASC))' +
-    ' WITHOUT ROWID');
-end;
 
 procedure TMainForm.FillCountryCombo;
 begin
@@ -203,9 +187,33 @@ begin
   end);
   S.Stop;
   Label1.Caption := Format('Query: %0.3fms', [S.Elapsed.TotalMilliseconds]);
-//  Label1.Caption := Format('%sms', [S.Elapsed.ToString]);
   ListView1.Items.EndUpdate;
   ResizeColumns;
+end;
+
+procedure TMainForm.InitDatabase;
+begin
+  {Create Database...}
+  {$IFNDEF DEMO_FDE}
+  DB := TSqlite3.OpenDatabase(':memory:');  //In-Memory database for demo purposes
+  {$ELSE}
+  DeleteFile('DemoDataEncrypted.db'); //Delete prexisting and re-create for demo purposes
+  DB := TSqlite3.OpenDatabase('DemoDataEncrypted.db', 'Password123'); //File database so you can see it is encrypted
+  Db.Execute('pragma journal_mode=OFF');
+  {$ENDIF}
+
+  DB.Execute(
+    ' CREATE TABLE Organizations ( ' +
+    '   OrgID            TEXT NOT NULL,' +
+    '   Name             TEXT,' +
+    '   Website          TEXT,' +
+    '   Country          TEXT,' +
+    '   Description      TEXT,' +
+    '   Founded          TEXT,' +
+    '   Industry         TEXT,' +
+    '   EmployeeCount    INTEGER,' +
+    ' PRIMARY KEY (OrgID ASC))' +
+    ' WITHOUT ROWID');
 end;
 
 procedure TMainForm.ReadCsvIntoDatabase;
@@ -214,8 +222,10 @@ var
   SW: TStopWatch;
 begin
   SW := TStopWatch.StartNew;
+  {Create the database...}
+  InitDatabase;
 
-  CreateDatabase;
+  {Import CSV Data...}
   Lines := TStringlist.Create;
   Values := TStringlist.Create;
   Values.StrictDelimiter := True;
@@ -227,10 +237,10 @@ begin
     begin
       with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
       begin
-        for var S in Lines do
+        for var Line in Lines do
         begin
-          Values.CommaText := S;
-          Values.Delete(0); {Ignore first column in our sample .csv}
+          Values.CommaText := Line; {Parse csv line}
+          Values.Delete(0);      {Ignore first column in our sample .csv}
           BindAndStep(Values.ToStringArray);
         end;
       end;
@@ -240,8 +250,9 @@ begin
     Values.Free;
     Lines.Free;
   end;
-  DB.Execute('ANALYZE');
 
+  {Prepare Stmt for getting description on ListView item select...}
+  DB.Execute('ANALYZE');
   Stmt_Description := DB.Prepare(
     'SELECT Description'   +
     '  FROM Organizations' +
@@ -251,16 +262,21 @@ end;
 
 procedure TMainForm.ResizeColumns;
 var
-  FixedWidth, AutoWidth : integer;
+  FixedWidth: integer;
+  AutoWidth : integer;
 begin
   FixedWidth := ListView1.Columns[5].Width + ListView1.Columns[6].Width;
   AutoWidth := (ListView1.ClientWidth - FixedWidth) div 4;
+
   ListView1.Items.BeginUpdate;
-  ListView1.Columns[1].Width := AutoWidth;
-  ListView1.Columns[2].Width := AutoWidth;
-  ListView1.Columns[3].Width := AutoWidth;
-  ListView1.Columns[4].Width := ListView1.ClientWidth - FixedWidth - AutoWidth * 3;
-  ListView1.Items.EndUpdate;
+  try
+    ListView1.Columns[1].Width := AutoWidth;
+    ListView1.Columns[2].Width := AutoWidth;
+    ListView1.Columns[3].Width := AutoWidth;
+    ListView1.Columns[4].Width := ListView1.ClientWidth - FixedWidth - AutoWidth * 3;
+  finally
+    ListView1.Items.EndUpdate;
+  end;
 end;
 
 End.

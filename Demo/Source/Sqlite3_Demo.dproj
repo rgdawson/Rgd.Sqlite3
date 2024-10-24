@@ -130,7 +130,6 @@
             <Form>MainForm</Form>
             <FormType>dfm</FormType>
         </DCCReference>
-        <DCCReference Include="..\..\Rgd.Sqlite3.pas"/>
         <DCCReference Include="Demo.SqliteInfoForm.pas">
             <Form>SqliteInfoForm</Form>
             <FormType>dfm</FormType>
@@ -162,6 +161,12 @@
             </Delphi.Personality>
             <Deployment Version="5">
                 <DeployFile LocalName="..\Bin\Win32-Debug\Sqlite3_Demo.exe" Configuration="Debug" Class="ProjectOutput"/>
+                <DeployFile LocalName="..\Bin\Win32-Release\Sqlite3_Demo.exe" Configuration="Release" Class="ProjectOutput">
+                    <Platform Name="Win32">
+                        <RemoteName>Sqlite3_Demo.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
                 <DeployFile LocalName="..\Bin\Win64-Release\Sqlite3_Demo.exe" Configuration="Release" Class="ProjectOutput"/>
                 <DeployClass Name="AdditionalDebugSymbols">
                     <Platform Name="iOSSimulator">

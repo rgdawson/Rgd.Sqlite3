@@ -3,7 +3,6 @@ program Sqlite3_Demo;
 uses
   Vcl.Forms,
   Demo.MainForm in 'Demo.MainForm.pas' {MainForm},
-  Rgd.Sqlite3 in '..\..\Rgd.Sqlite3.pas',
   Demo.SqliteInfoForm in 'Demo.SqliteInfoForm.pas' {SqliteInfoForm};
 
 {$R *.res}

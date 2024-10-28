@@ -449,7 +449,7 @@ end;
 
 procedure TSqlParam.BindText(const Value: string);
 begin
-  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(UTF8Encode(Value)), SQL_NTS, SQLITE_TRANSIENT));
+  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(PAnsiChar(UTF8Encode(Value))), SQL_NTS, SQLITE_TRANSIENT));
 end;
 
 procedure TSqlParam.BindNull;
@@ -582,6 +582,11 @@ begin
   FFDConnection.Params.Database := Filename;
   FFDConnection.Params.Password := Password;
   FFDConnection.Open;
+  if not SameText(Filename, ':memory:') then
+  begin
+    Execute('pragma journal_mode=memory');   //delete,truncate,persist,memory,off
+    Execute('pragma synchronous=0');         //0=off, 1=normal,2=full,3=extra
+  end;
 end;
 
 procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Password: string = '');
@@ -688,7 +693,7 @@ end;
 procedure TSqlite3Database.Execute(const SQL: string);
 begin
   CheckHandle;
-  Check(sqlite3_exec(Handle, PByte(UTF8Encode(SQL)), nil, nil, nil));
+  Check(sqlite3_exec(Handle, PByte(PAnsiChar(UTF8Encode(SQL))), nil, nil, nil));
 end;
 
 procedure TSqlite3Database.Execute(const SQL: string; const FmtParams: array of const);
@@ -763,13 +768,13 @@ begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   pzTail := nil;
-  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(UTF8Encode(SQL)), SQL_NTS, FHandle, pzTail));
+  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(PAnsiChar(UTF8Encode(SQL))), SQL_NTS, FHandle, pzTail));
   FOwnerDatabase.StatementList.Add(Pointer(Self));
 end;
 
 destructor TSQLite3Statement.Destroy;
 begin
-  if Assigned(Self.FHandle) then
+  if Assigned(FHandle) then
   begin
     FOwnerDatabase.StatementList.Remove(Pointer(Self));
     sqlite3_finalize(FHandle);

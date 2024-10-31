@@ -449,7 +449,7 @@ end;
 
 procedure TSqlParam.BindText(const Value: string);
 begin
-  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(PAnsiChar(UTF8Encode(Value))), SQL_NTS, SQLITE_TRANSIENT));
+  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(PUtf8(UTF8Encode(Value))), SQL_NTS, SQLITE_TRANSIENT));
 end;
 
 procedure TSqlParam.BindNull;
@@ -693,7 +693,7 @@ end;
 procedure TSqlite3Database.Execute(const SQL: string);
 begin
   CheckHandle;
-  Check(sqlite3_exec(Handle, PByte(PAnsiChar(UTF8Encode(SQL))), nil, nil, nil));
+  Check(sqlite3_exec(Handle, PByte(PUtf8(UTF8Encode(SQL))), nil, nil, nil));
 end;
 
 procedure TSqlite3Database.Execute(const SQL: string; const FmtParams: array of const);
@@ -768,7 +768,7 @@ begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
   pzTail := nil;
-  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(PAnsiChar(UTF8Encode(SQL))), SQL_NTS, FHandle, pzTail));
+  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(PUtf8(UTF8Encode(SQL))), SQL_NTS, FHandle, pzTail));
   FOwnerDatabase.StatementList.Add(Pointer(Self));
 end;
 

@@ -112,3 +112,35 @@ Example: inserting records from a CSV file...
       end;
       DB.Execute('ANALYZE');
     end;
+
+Example: Application-Defined Function
+
+    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
+    var
+      Count: integer;
+      Result: string;
+    begin
+      Count := TSqlite3.ValueInt(Args[0]);
+      case Count of
+        0..500:       Result := 'Small';
+        501..5000:    Result := 'Medium';
+        5001..MaxInt: Result := 'Large';
+      end;
+      TSqlite3.ResultText(Context, Result);
+    end;
+
+    {...}
+    
+    DB.CreateFunction('SizeCategory', 1, @SqlAdf_SizeCategory);
+
+    {...}
+    
+    with DB.Prepare(
+      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount, SizeCategory(EmployeeCount) as SizeCat' +
+      '  FROM Organizations' +
+      ' WHERE Country LIKE ?' +
+      '   AND SizeCat LIKE ?' +
+      ' ORDER BY 2') do BindAndFetch([FCountry, FSizeCat], procedure
+    begin
+      {...}
+    end

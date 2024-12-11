@@ -108,9 +108,14 @@ const
 
 type
   {Sqlite pointer types...}
-  PSqlite3     = Pointer;
+  PSqlite3 = Pointer;
   PSqlite3Stmt = Pointer;
   PSqlite3Blob = Pointer;
+  PSQLite3Context = Pointer;
+  PSQLite3Value = Pointer;
+  PPSQLite3ValueArray = ^TPSQLite3ValueArray;
+  TPSQLite3ValueArray = array[0..MaxInt div SizeOf(PSQLite3Value) - 1] of PSQLite3Value;
+  TSQLite3RegularFunction = procedure(ctx: PSQLite3Context; n: Integer; apVal: PPSQLite3ValueArray); cdecl;
 
 {$ENDREGION}
 
@@ -187,11 +192,6 @@ type
     {Prepare...}
     function Prepare(const SQL: string): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
-    {Transactions...}
-    procedure BeginTransaction;
-    procedure Commit;
-    procedure Rollback;
-    procedure Transaction(const Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
@@ -203,6 +203,13 @@ type
     function  FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs...}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
+    {Transactions...}
+    procedure BeginTransaction;
+    procedure Commit;
+    procedure Rollback;
+    procedure Transaction(const Proc: TProc); overload;
+    {Application-Defined Functons...}
+    procedure CreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
     {Properties...}
     property StatementList: TList read GetStatementList;
     property BlobHandlerList: TList read GetBlobHandlerList;
@@ -291,11 +298,6 @@ type
     {Prepare SQL...}
     function Prepare(const SQL: string): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
-    {Transactions...}
-    procedure BeginTransaction;
-    procedure Commit;
-    procedure Rollback;
-    procedure Transaction(const Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
@@ -307,6 +309,14 @@ type
     function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean): ISqlite3BlobHandler;
+    {Transactions...}
+    procedure BeginTransaction;
+    procedure Commit;
+    procedure Rollback;
+    procedure Transaction(const Proc: TProc); overload;
+    {Application-Defined Functons...}
+    procedure CreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
+    {Properties...}
     property Handle: PSqlite3 read GetHandle;
   public
     {Constructor/Destructor...}
@@ -361,16 +371,25 @@ type
 
   {General Global Sqlite functions...}
   TSqlite3 = class
-    private
-      class var FSqliteVersion: string;
-    public
-      class function ThreadSafe: Boolean;
-      class function LibPath: string;
-      class function VersionStr: string;
-      class function CompileOptions: string;
-      class function OpenDatabase(const FileName: string; Password: string): ISqlite3Database;
-      class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
-      class procedure ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
+  private
+    class var FSqliteVersion: string;
+  public
+    class function ThreadSafe: Boolean;
+    class function LibPath: string;
+    class function VersionStr: string;
+    class function CompileOptions: string;
+    class function OpenDatabase(const FileName: string; Password: string = ''): ISqlite3Database;
+    class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
+    class procedure ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
+    {Application Defined function helpers...}
+    class function ValueText(Value: PSqlite3Value): string;                {Value Argument as string}
+    class procedure ResultText(Context: PSQLite3Context; Value: string);   {Sets Result as string}
+    class function ValueInt(Value: PSqlite3Value): integer;                {Value Argument as integer}
+    class procedure ResultInt(Context: PSQLite3Context; Value: integer);   {Sets Result as integer}
+    class function ValueInt64(Value: PSqlite3Value): Int64;                {Value Argument as Int64}
+    class procedure ResultInt64(Context: PSQLite3Context; Value: Int64);   {Sets Result as Int64}
+    class function ValueDouble(Value: PSqlite3Value): Double;              {Value Argument as Double}
+    class procedure ResultDouble(Context: PSQLite3Context; Value: Double); {Sets Result as Double}
   end;
 
 var
@@ -400,6 +419,8 @@ Implementation
 const
   SQL_NTS = -1;
   SQLITE_TRANSIENT = Pointer(-1);
+  SQLITE_UTF8 = $00000001;
+  SQLITE_DETERMINISTIC = $00000800;
 
 type
   PPAnsiCharArray = ^TPAnsiCharArray;
@@ -757,6 +778,31 @@ begin
   end;
 end;
 
+procedure TSqlite3Database.CreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
+(***************************************************************************************************
+ *  Application Defined Functions
+ *
+ *  Can't define an application-defined function anonmously.  It has to be cdecl.
+ *
+ *  Anyway, Define your application-defined sqlite function something like the following:
+ *
+ *    procedure MyFunction(Ctx: Pointer; n: integer; Args: PPSQLite3ValueArray); cdecl;
+ *    begin
+ *      var Arg := TSqlite3.ValueText(args[0]);
+ *      var Result := SomeFunction(Arg);
+ *      TSqlite3.ResultText(Context, Result);
+ *    end;
+ *
+ *  To Register the function, call:
+ *    DB.CreateFunction('MyFunction', @MyFunction);
+ *
+ *  After that, you can use the function in SQL statements
+ *    SELECT MyFunction(MyField) FROM MyTable;
+ ***************************************************************************************************)
+begin
+  sqlite3_create_function(Handle, PByte(PUtf8(UTF8Encode(Name))), nArg, SQLITE_UTF8 or SQLITE_DETERMINISTIC, nil, @xFunc, nil, nil);
+end;
+
 {$ENDREGION}
 
 {$REGION ' TSqlite3Statment '}
@@ -996,7 +1042,7 @@ begin
   Result := 'FireDAC.Phys.SQLiteWrapper.FDEStat';
 end;
 
-class function TSqlite3.OpenDatabase(const FileName: string; Password: string): ISqlite3Database;
+class function TSqlite3.OpenDatabase(const FileName: string; Password: string = ''): ISqlite3Database;
 begin
   Result := TSqlite3Database.Create;
   Result.Open(Filename, Password);
@@ -1005,7 +1051,7 @@ end;
 class function TSqlite3.OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
 begin
   Result := TSqlite3Database.Create;
-  //Result.OpenIntoMemory(Filename);
+  Result.OpenIntoMemory(Filename);
 end;
 
 class function TSqlite3.ThreadSafe: Boolean;
@@ -1042,6 +1088,47 @@ begin
     SqliteDriverLink.Free;
   end;
 end;
+
+class function TSqlite3.ValueText(Value: PSqlite3Value): string;
+begin
+  Result := UTF8ToString(PUtf8(sqlite3_value_text(Value)));
+end;
+
+class procedure TSqlite3.ResultText(Context: PSQLite3Context; Value: string);
+begin
+  sqlite3_result_text(Context, PByte(PUtf8(UTF8Encode(Value))), SQL_NTS, nil);
+end;
+
+class function TSqlite3.ValueInt(Value: PSqlite3Value): integer;
+begin
+  Result := sqlite3_value_int(Value);
+end;
+
+class procedure TSqlite3.ResultInt(Context: PSQLite3Context; Value: integer);
+begin
+  sqlite3_result_int(Context, Value);
+end;
+
+class function TSqlite3.ValueInt64(Value: PSqlite3Value): Int64;
+begin
+  Result := sqlite3_value_int64(Value);
+end;
+
+class procedure TSqlite3.ResultInt64(Context: PSQLite3Context; Value: int64);
+begin
+  sqlite3_result_int64(Context, Value);
+end;
+
+class function TSqlite3.ValueDouble(Value: PSqlite3Value): Double;
+begin
+  Result := sqlite3_value_Double(Value);
+end;
+
+class procedure TSqlite3.ResultDouble(Context: PSQLite3Context; Value: Double);
+begin
+  sqlite3_result_Double(Context, Value);
+end;
+
 
 {$ENDREGION}
 

@@ -12,6 +12,7 @@ object MainForm: TMainForm
   Font.Height = -12
   Font.Name = 'Segoe UI'
   Font.Style = []
+  OnClose = FormClose
   OnResize = FormResize
   OnShow = FormShow
   DesignSize = (
@@ -50,6 +51,13 @@ object MainForm: TMainForm
     Anchors = [akRight, akBottom]
     Caption = 'Label4'
   end
+  object Label5: TLabel
+    Left = 294
+    Top = 11
+    Width = 71
+    Height = 15
+    Caption = 'Size Category'
+  end
   object ListView1: TListView
     Left = 8
     Top = 37
@@ -86,6 +94,11 @@ object MainForm: TMainForm
         Alignment = taRightJustify
         Caption = 'Employees'
         Width = 70
+      end
+      item
+        Alignment = taCenter
+        Caption = 'Category'
+        Width = 75
       end>
     DoubleBuffered = True
     RowSelect = True
@@ -131,5 +144,22 @@ object MainForm: TMainForm
     Caption = 'Sqlite3 Library Info'
     TabOrder = 4
     OnClick = btnInfoClick
+  end
+  object cbxSizeCategory: TComboBox
+    Left = 374
+    Top = 8
+    Width = 213
+    Height = 23
+    Style = csDropDownList
+    DropDownCount = 12
+    ItemIndex = 0
+    TabOrder = 5
+    Text = '-- All Size Categories --'
+    OnClick = cbxCountryClick
+    Items.Strings = (
+      '-- All Size Categories --'
+      'Small'
+      'Medium'
+      'Large')
   end
 end

@@ -10,8 +10,6 @@ Unit Rgd.Sqlite3;
  *  To dynamically link sqlite3.dll, define SQLITE_USE_DLL {$DEFINE SQLITE_USE_DLL}
  ******************************************************************************************************)
 
-{.$DEFINE SQLITE_USE_DLL}
-
 Interface
 
 {$REGION ' Uses '}
@@ -101,9 +99,14 @@ const
 
 type
   {Sqlite pointer types...}
-  PSqlite3     = Pointer;
+  PSqlite3 = Pointer;
   PSqlite3Stmt = Pointer;
   PSqlite3Blob = Pointer;
+  PSQLite3Context = Pointer;
+  PSQLite3Value = Pointer;
+  PPSQLite3ValueArray = ^TPSQLite3ValueArray;
+  TPSQLite3ValueArray = array[0..MaxInt div SizeOf(PSQLite3Value) - 1] of PSQLite3Value;
+  TSQLite3RegularFunction = procedure(ctx: PSQLite3Context; n: Integer; apVal: PPSQLite3ValueArray); cdecl;
 
 {$ENDREGION}
 
@@ -125,6 +128,7 @@ type
   {Procedure References...}
   TProc     = reference to procedure;
   TStmtProc = reference to procedure(const Stmt: ISqlite3Statement);
+  TStrFunc  = reference to function(S: string): string;
 
   {Column, Param Accessors...}
 
@@ -180,11 +184,6 @@ type
     {Prepare...}
     function Prepare(const SQL: string): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
-    {Transactions...}
-    procedure BeginTransaction;
-    procedure Commit;
-    procedure Rollback;
-    procedure Transaction(const Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
@@ -196,6 +195,13 @@ type
     function  FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs...}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
+    {Transactions...}
+    procedure BeginTransaction;
+    procedure Commit;
+    procedure Rollback;
+    procedure Transaction(const Proc: TProc); overload;
+    {Application-Defined Functons...}
+    procedure CreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
     {Properties...}
     property StatementList: TList read GetStatementList;
     property BlobHandlerList: TList read GetBlobHandlerList;
@@ -278,17 +284,12 @@ type
     procedure CheckHandle;
     {Open/Close...}
     procedure Open(const FileName: string; OpenFlags: integer);
-    procedure Close;
     procedure OpenIntoMemory(const FileName: string);
+    procedure Close;
     procedure Backup(const Filename: string);
     {Prepare SQL...}
     function Prepare(const SQL: string): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
-    {Transactions...}
-    procedure BeginTransaction;
-    procedure Commit;
-    procedure Rollback;
-    procedure Transaction(const Proc: TProc); overload;
     {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
@@ -300,6 +301,14 @@ type
     function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
     {Blobs}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean): ISqlite3BlobHandler;
+    {Transactions...}
+    procedure BeginTransaction;
+    procedure Commit;
+    procedure Rollback;
+    procedure Transaction(const Proc: TProc); overload;
+    {Application-Defined Functons...}
+    procedure CreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
+    {Properties...}
     property Handle: PSqlite3 read GetHandle;
   public
     {Constructor/Destructor...}
@@ -363,6 +372,15 @@ type
     class function CompileOptions: string;
     class function OpenDatabase(const FileName: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
     class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
+    {Application Defined function helpers...}
+    class function ValueText(Value: PSqlite3Value): string;                {Value Argument as string}
+    class procedure ResultText(Context: PSQLite3Context; Value: string);   {Sets Result as string}
+    class function ValueInt(Value: PSqlite3Value): integer;                {Value Argument as integer}
+    class procedure ResultInt(Context: PSQLite3Context; Value: integer);   {Sets Result as integer}
+    class function ValueInt64(Value: PSqlite3Value): Int64;                {Value Argument as Int64}
+    class procedure ResultInt64(Context: PSQLite3Context; Value: Int64);   {Sets Result as Int64}
+    class function ValueDouble(Value: PSqlite3Value): Double;              {Value Argument as Double}
+    class procedure ResultDouble(Context: PSQLite3Context; Value: Double); {Sets Result as Double}
   end;
 
 var
@@ -420,14 +438,19 @@ end;
 const
   SQL_NTS = -1;
   SQLITE_TRANSIENT = Pointer(-1);
+  SQLITE_UTF8 = $00000001;
+  SQLITE_DETERMINISTIC = $00000800;
 
 type
-  PPAnsiCharArray = ^TPAnsiCharArray;
-  TPAnsiCharArray = array[0..MaxInt div SizeOf(PAnsiChar) - 1] of PAnsiChar;
-  TSqliteCallback = function(pArg: Pointer; nCol: Integer; argv: PPAnsiCharArray; colv: PPAnsiCharArray): Integer; cdecl;
-  PSqliteBackup   = Pointer;
   PUtf8           = PAnsiChar;
+  PSqliteBackup   = Pointer;
+  TPAnsiCharArray = array[0..MaxInt div SizeOf(PAnsiChar) - 1] of PAnsiChar;
+  PPAnsiCharArray = ^TPAnsiCharArray;
+  TSqliteCallback           = function(pArg: Pointer; nCol: Integer; argv: PPAnsiCharArray; colv: PPAnsiCharArray): Integer; cdecl;
   TSqlite3_Destroy_Callback = procedure(p: Pointer); cdecl;
+  TSQLite3AggregateStep     = procedure(ctx: PSQLite3Context; n: Integer; apVal: PPSQLite3ValueArray); cdecl;
+  TSQLite3AggregateFinalize = procedure(ctx: PSQLite3Context); cdecl;
+  TSQLite3DestructorType    = procedure(p: Pointer); cdecl;
 
 (***************************************************************************************************
  *  This is the subset of sqlite3 definitions required to support this unit.
@@ -490,6 +513,16 @@ function sqlite3_blob_open(DB: PSqlite3; zDb: PAnsiChar; zTable: PAnsiChar; zCol
 function sqlite3_blob_close(pBlob: PSqlite3Blob): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_blob_read(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external 'sqlite3.dll';
 function sqlite3_blob_write(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; cdecl; external 'sqlite3.dll';
+
+function sqlite3_create_function(db: PSQLite3; const zFunctionName: PByte; nArg: Integer; eTextRep: Integer; pApp: Pointer; xFunc: TSQLite3RegularFunction; xStep: TSQLite3AggregateStep; xFinal: TSQLite3AggregateFinalize): Integer; cdecl; external 'sqlite3.dll';
+function sqlite3_value_int(pVal: PSQLite3Value): Integer; cdecl; external 'sqlite3.dll';
+function sqlite3_value_int64(pVal: PSQLite3Value): Int64; cdecl; external 'sqlite3.dll';
+function sqlite3_value_double(pVal: PSQLite3Value): Double; cdecl; external 'sqlite3.dll';
+function sqlite3_value_text(pVal: PSQLite3Value): PByte; cdecl; external 'sqlite3.dll';
+procedure sqlite3_result_int(pCtx: PSQLite3Context; iVal: Integer); cdecl; external 'sqlite3.dll';
+procedure sqlite3_result_int64(pCtx: PSQLite3Context; iVal: Int64); cdecl; external 'sqlite3.dll';
+procedure sqlite3_result_double(pCtx: PSQLite3Context; rVal: Double); cdecl; external 'sqlite3.dll';
+procedure sqlite3_result_text(pCtx: PSQLite3Context; const z: PByte; n: Integer; xDel: TSQLite3DestructorType); cdecl; external 'sqlite3.dll';
 
 {$ENDIF}
 
@@ -686,14 +719,6 @@ begin
   TempDB.Close;
 end;
 
-procedure TSqlite3Database.Backup(const Filename: string);
-{Remark: VACUUM INTO was introduced in Sqlite3 version 3.27.0
-         VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
-begin
-  DeleteFile(Filename);
-  Execute('VACUUM INTO %s', [QuotedStr(Filename)])
-end;
-
 procedure TSqlite3Database.Close;
 var
   i: integer;
@@ -725,6 +750,14 @@ begin
     FHandle := nil;
     FFilename := '';
   end;
+end;
+
+procedure TSqlite3Database.Backup(const Filename: string);
+{Remark: VACUUM INTO was introduced in Sqlite3 version 3.27.0
+         VACUUM INTO does uses a few more CPU cycles, but target DB is vaccuumed}
+begin
+  DeleteFile(Filename);
+  Execute('VACUUM INTO %s', [QuotedStr(Filename)])
 end;
 
 function TSqlite3Database.Prepare(const SQL: string): ISqlite3Statement;
@@ -832,6 +865,31 @@ begin
     if FTransactionOpen then
       Rollback;
   end;
+end;
+
+procedure TSqlite3Database.CreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
+(***************************************************************************************************
+ *  Application Defined Functions
+ *
+ *  Can't define an application-defined function anonmously.  It has to be cdecl.
+ *
+ *  Anyway, Define your application-defined sqlite function something like the following:
+ *
+ *    procedure MyFunction(Ctx: Pointer; n: integer; Args: PPSQLite3ValueArray); cdecl;
+ *    begin
+ *      var Arg := TSqlite3.ValueText(args[0]);
+ *      var Result := SomeFunction(Arg);
+ *      TSqlite3.ResultText(Context, Result);
+ *    end;
+ *
+ *  To Register the function, call:
+ *    DB.CreateFunction('MyFunction', @MyFunction);
+ *
+ *  After that, you can use the function in SQL statements
+ *    SELECT MyFunction(MyField) FROM MyTable;
+ ***************************************************************************************************)
+begin
+  sqlite3_create_function(Handle, PByte(PUtf8(UTF8Encode(Name))), nArg, SQLITE_UTF8 or SQLITE_DETERMINISTIC, nil, @xFunc, nil, nil);
 end;
 
 {$ENDREGION}
@@ -1104,6 +1162,46 @@ begin
   {$ELSE}
   Result := TRUE;
   {$ENDIF}
+end;
+
+class function TSqlite3.ValueText(Value: PSqlite3Value): string;
+begin
+  Result := UTF8ToString(PUtf8(sqlite3_value_text(Value)));
+end;
+
+class procedure TSqlite3.ResultText(Context: PSQLite3Context; Value: string);
+begin
+  sqlite3_result_text(Context, PByte(PUtf8(UTF8Encode(Value))), SQL_NTS, nil);
+end;
+
+class function TSqlite3.ValueInt(Value: PSqlite3Value): integer;
+begin
+  Result := sqlite3_value_int(Value);
+end;
+
+class procedure TSqlite3.ResultInt(Context: PSQLite3Context; Value: integer);
+begin
+  sqlite3_result_int(Context, Value);
+end;
+
+class function TSqlite3.ValueInt64(Value: PSqlite3Value): Int64;
+begin
+  Result := sqlite3_value_int64(Value);
+end;
+
+class procedure TSqlite3.ResultInt64(Context: PSQLite3Context; Value: int64);
+begin
+  sqlite3_result_int64(Context, Value);
+end;
+
+class function TSqlite3.ValueDouble(Value: PSqlite3Value): Double;
+begin
+  Result := sqlite3_value_Double(Value);
+end;
+
+class procedure TSqlite3.ResultDouble(Context: PSQLite3Context; Value: Double);
+begin
+  sqlite3_result_Double(Context, Value);
 end;
 
 {$ENDREGION}

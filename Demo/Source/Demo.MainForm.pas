@@ -7,13 +7,14 @@ Interface
 uses
   System.Classes,
   System.SysUtils,
-  System.StrUtils,
   System.Diagnostics,
+  System.StrUtils,
   Vcl.Controls,
   Vcl.Forms,
   Vcl.ComCtrls,
   Vcl.StdCtrls,
   {$IFNDEF DEMO_FDE}Rgd.Sqlite3,{$ELSE}Rgd.Sqlite3FDE,{$ENDIF}
+  Rgd.StrUtils,
   Demo.SqliteInfoForm;
 
 type
@@ -27,18 +28,20 @@ type
     Memo1      : TMemo;
     Label1     : TLabel;
     Label4: TLabel;
+    cbxSizeCategory: TComboBox;
+    Label5: TLabel;
     procedure FormResize(Sender: TObject);
     procedure FormShow(Sender: TObject);
     procedure btnCloseClick(Sender: TObject);
     procedure btnInfoClick(Sender: TObject);
     procedure cbxCountryClick(Sender: TObject);
     procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
+    procedure FormClose(Sender: TObject; var Action: TCloseAction);
   private
     Stmt_Description: ISqlite3Statement;
-    procedure InitDatabase;
+    procedure CreateDatabase;
     procedure FillCountryCombo;
-    procedure LoadListView; overload;
-    procedure LoadListView(Country: string); overload;
+    procedure LoadListView;
     procedure ReadCsvIntoDatabase;
     procedure ResizeColumns;
   public
@@ -52,10 +55,16 @@ Implementation
 
 {$R *.dfm}
 
+{$REGION ' Events '}
+
 const
   ALL_COUNTRIES = '-- All Countries --';
+  ALL_SIZES     = '-- All Size Categories --';
 
-{$REGION ' Events '}
+procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  DeleteFile('Data.db');
+end;
 
 procedure TMainForm.FormResize(Sender: TObject);
 begin
@@ -66,8 +75,8 @@ procedure TMainForm.FormShow(Sender: TObject);
 begin
   ReadCsvIntoDatabase;
   FillCountryCombo;
-  LoadListView;
   cbxCountry.ItemIndex := 0;
+  LoadListView;
 end;
 
 procedure TMainForm.btnCloseClick(Sender: TObject);
@@ -89,10 +98,7 @@ end;
 
 procedure TMainForm.cbxCountryClick(Sender: TObject);
 begin
-  if cbxCountry.Text = ALL_COUNTRIES then
-    LoadListView
-  else
-    LoadListView(cbxCountry.Text);
+  LoadListView;
 end;
 
 procedure TMainForm.ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
@@ -103,95 +109,21 @@ end;
 
 {$ENDREGION}
 
-procedure TMainForm.FillCountryCombo;
-begin
-  cbxCountry.Items.BeginUpdate;
-  cbxCountry.Items.Clear;
-  cbxCountry.Items.Add(ALL_COUNTRIES);
-
-  with DB.Prepare(
-    'SELECT DISTINCT Country' +
-    '  FROM Organizations' +
-    ' ORDER BY 1') do
-  while Step = SQLITE_ROW do
-    cbxCountry.Items.Add(SqlColumn[0].AsText);
-
-  cbxCountry.Items.EndUpdate;
-end;
-
-procedure TMainForm.LoadListView;
+procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
 var
-  S: TStopWatch;
-  S0: string;
+  Count: integer;
+  Result: string;
 begin
-  ListView1.Items.BeginUpdate;
-  try
-    ListView1.Clear;
-    S := TStopWatch.StartNew;
-    with DB.Prepare(
-      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
-      '  FROM Organizations' +
-      ' ORDER BY 2') do Fetch(procedure
-    begin
-      S.Stop;
-      var Item := ListView1.Items.Add;
-      S.Start;
-      S0 := SqlColumn[0].AsText;
-      S.Stop;
-      Item.Caption := S0;
-      S.Start;
-      for var i := 1 to 6 do
-      begin
-        S0 := SqlColumn[i].AsText;
-        S.Stop;
-        Item.SubItems.Add(S0);
-        S.Start;
-      end;
-    end);
-    Label1.Caption := Format('Query: %0.3fms', [S.Elapsed.TotalMilliseconds]);
-  finally
-    ListView1.Items.EndUpdate;
+  Count := TSqlite3.ValueInt(Args[0]);
+  case Count of
+    0..500:       Result := 'Small';
+    501..5000:    Result := 'Medium';
+    5001..MaxInt: Result := 'Large';
   end;
-  ResizeColumns;
+  TSqlite3.ResultText(Context, Result);
 end;
 
-procedure TMainForm.LoadListView(Country: string);
-var
-  S: TStopwatch;
-  S0: string;
-begin
-  S := TStopWatch.StartNew;
-  ListView1.Items.BeginUpdate;
-  ListView1.Clear;
-  S := TStopWatch.StartNew;
-  with DB.Prepare(
-    'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount' +
-    '  FROM Organizations' +
-    ' WHERE Country = ?' +
-    ' ORDER BY 2') do BindAndFetch([Country], procedure
-  begin
-    S.Stop;
-    var Item := ListView1.Items.Add;
-    S.Start;
-    S0 := SqlColumn[0].AsText;
-    S.Stop;
-    Item.Caption := S0;
-    S.Start;
-    for var i := 1 to 6 do
-    begin
-      S0 := SqlColumn[i].AsText;
-      S.Stop;
-      Item.SubItems.Add(S0);
-      S.Start;
-    end;
-  end);
-  S.Stop;
-  Label1.Caption := Format('Query: %0.3fms', [S.Elapsed.TotalMilliseconds]);
-  ListView1.Items.EndUpdate;
-  ResizeColumns;
-end;
-
-procedure TMainForm.InitDatabase;
+procedure TMainForm.CreateDatabase;
 begin
   {Create Database...}
   {$IFNDEF DEMO_FDE}
@@ -199,9 +131,9 @@ begin
   {$ELSE}
   DeleteFile('DemoDataEncrypted.db'); //Delete prexisting and re-create for demo purposes
   DB := TSqlite3.OpenDatabase('DemoDataEncrypted.db', 'Password123'); //File database so you can see it is encrypted
-  Db.Execute('pragma journal_mode=OFF');
+  //Db.Execute('pragma journal_mode=OFF');
   {$ENDIF}
-
+  {Create Table...}
   DB.Execute(
     ' CREATE TABLE Organizations ( ' +
     '   OrgID            TEXT NOT NULL,' +
@@ -214,6 +146,66 @@ begin
     '   EmployeeCount    INTEGER,' +
     ' PRIMARY KEY (OrgID ASC))' +
     ' WITHOUT ROWID');
+
+  DB.CreateFunction('SizeCategory', 1, @SqlAdf_SizeCategory);
+end;
+
+procedure TMainForm.FillCountryCombo;
+begin
+  cbxCountry.Items.BeginUpdate;
+  cbxCountry.Items.Clear;
+  cbxCountry.Items.Add(ALL_COUNTRIES);
+  with DB.Prepare(
+    'SELECT DISTINCT Country' +
+    '  FROM Organizations' +
+    ' ORDER BY 1') do
+  while Step = SQLITE_ROW do
+    cbxCountry.Items.Add(SqlColumn[0].AsText);
+  cbxCountry.Items.EndUpdate;
+end;
+
+procedure TMainForm.LoadListView;
+var
+  SW: TStopwatch;
+  S0: string;
+  FCountry: string;
+  FSizeCat: string;
+begin
+  SW := TStopWatch.StartNew;
+  ListView1.Items.BeginUpdate;
+  try
+    ListView1.Clear;
+    SW := TStopWatch.StartNew;
+    FCountry := IfThen(cbxCountry.Text = ALL_COUNTRIES, '%', cbxCountry.Text);
+    FSizeCat := IfThen(cbxSizeCategory.Text = ALL_SIZES, '%', cbxSizeCategory.Text);
+    with DB.Prepare(
+      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount, SizeCategory(EmployeeCount)' +
+      '  FROM Organizations' +
+      ' WHERE Country LIKE ?' +
+      '   AND SizeCategory(EmployeeCount) LIKE ?' +
+      ' ORDER BY 2') do BindAndFetch([FCountry, FSizeCat], procedure
+    begin
+      SW.Stop;
+      var Item := ListView1.Items.Add;
+      SW.Start;
+      S0 := SqlColumn[0].AsText;
+      SW.Stop;
+      Item.Caption := S0;
+      SW.Start;
+      for var i := 1 to 7 do
+      begin
+        S0 := SqlColumn[i].AsText;
+        SW.Stop;
+        Item.SubItems.Add(S0);
+        SW.Start;
+      end;
+    end);
+    SW.Stop;
+    Label1.Caption := Format('Query: %0.3fms', [SW.Elapsed.TotalMilliseconds]);
+  finally
+    ListView1.Items.EndUpdate;
+  end;
+  ResizeColumns;
 end;
 
 procedure TMainForm.ReadCsvIntoDatabase;
@@ -222,10 +214,8 @@ var
   SW: TStopWatch;
 begin
   SW := TStopWatch.StartNew;
-  {Create the database...}
-  InitDatabase;
 
-  {Import CSV Data...}
+  CreateDatabase;
   Lines := TStringlist.Create;
   Values := TStringlist.Create;
   Values.StrictDelimiter := True;
@@ -237,10 +227,10 @@ begin
     begin
       with DB.Prepare('INSERT INTO Organizations VALUES (?, ?, ?, ?, ?, ?, ?, ?)') do
       begin
-        for var Line in Lines do
+        for var S in Lines do
         begin
-          Values.CommaText := Line; {Parse csv line}
-          Values.Delete(0);      {Ignore first column in our sample .csv}
+          Values.CommaText := S;
+          Values.Delete(0); {Ignore first column in our sample .csv}
           BindAndStep(Values.ToStringArray);
         end;
       end;
@@ -250,9 +240,8 @@ begin
     Values.Free;
     Lines.Free;
   end;
-
-  {Prepare Stmt for getting description on ListView item select...}
   DB.Execute('ANALYZE');
+
   Stmt_Description := DB.Prepare(
     'SELECT Description'   +
     '  FROM Organizations' +
@@ -262,21 +251,16 @@ end;
 
 procedure TMainForm.ResizeColumns;
 var
-  FixedWidth: integer;
-  AutoWidth : integer;
+  FixedWidth, AutoWidth : integer;
 begin
-  FixedWidth := ListView1.Columns[5].Width + ListView1.Columns[6].Width;
+  FixedWidth := ListView1.Columns[5].Width + ListView1.Columns[6].Width + ListView1.Columns[7].Width;
   AutoWidth := (ListView1.ClientWidth - FixedWidth) div 4;
-
   ListView1.Items.BeginUpdate;
-  try
-    ListView1.Columns[1].Width := AutoWidth;
-    ListView1.Columns[2].Width := AutoWidth;
-    ListView1.Columns[3].Width := AutoWidth;
-    ListView1.Columns[4].Width := ListView1.ClientWidth - FixedWidth - AutoWidth * 3;
-  finally
-    ListView1.Items.EndUpdate;
-  end;
+  ListView1.Columns[1].Width := AutoWidth;
+  ListView1.Columns[2].Width := AutoWidth;
+  ListView1.Columns[3].Width := AutoWidth;
+  ListView1.Columns[4].Width := ListView1.ClientWidth - FixedWidth - AutoWidth * 3;
+  ListView1.Items.EndUpdate;
 end;
 
 End.

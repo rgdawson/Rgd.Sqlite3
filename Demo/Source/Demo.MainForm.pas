@@ -109,19 +109,19 @@ end;
 
 {$ENDREGION}
 
-procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
-var
-  Count: integer;
-  Result: string;
-begin
-  Count := TSqlite3.ValueInt(Args[0]);
-  case Count of
-    0..500:       Result := 'Small';
-    501..5000:    Result := 'Medium';
-    5001..MaxInt: Result := 'Large';
-  end;
-  TSqlite3.ResultText(Context, Result);
-end;
+    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
+    var
+      Count: integer;
+      Result: string;
+    begin
+      Count := TSqlite3.ValueInt(Args[0]);
+      case Count of
+        0..500:       Result := 'Small';
+        501..5000:    Result := 'Medium';
+        5001..MaxInt: Result := 'Large';
+      end;
+      TSqlite3.ResultText(Context, Result);
+    end;
 
 procedure TMainForm.CreateDatabase;
 begin
@@ -179,10 +179,10 @@ begin
     FCountry := IfThen(cbxCountry.Text = ALL_COUNTRIES, '%', cbxCountry.Text);
     FSizeCat := IfThen(cbxSizeCategory.Text = ALL_SIZES, '%', cbxSizeCategory.Text);
     with DB.Prepare(
-      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount, SizeCategory(EmployeeCount)' +
+      'SELECT OrgID, Name, Website, Country, Industry, Founded, EmployeeCount, SizeCategory(EmployeeCount) as SizeCat' +
       '  FROM Organizations' +
       ' WHERE Country LIKE ?' +
-      '   AND SizeCategory(EmployeeCount) LIKE ?' +
+      '   AND SizeCat LIKE ?' +
       ' ORDER BY 2') do BindAndFetch([FCountry, FSizeCat], procedure
     begin
       SW.Stop;

@@ -19,24 +19,24 @@ uses
 
 type
   TMainForm = class(TForm)
-    btnClose   : TButton;
-    btnInfo: TButton;
-    cbxCountry : TComboBox;
-    Label2     : TLabel;
-    Label3     : TLabel;
-    ListView1  : TListView;
-    Memo1      : TMemo;
-    Label1     : TLabel;
-    Label4: TLabel;
-    cbxSizeCategory: TComboBox;
-    Label5: TLabel;
-    procedure FormResize(Sender: TObject);
-    procedure FormShow(Sender: TObject);
+    btnClose        : TButton;
+    btnInfo         : TButton;
+    cbxCountry      : TComboBox;
+    cbxSizeCategory : TComboBox;
+    Label1          : TLabel;
+    Label2          : TLabel;
+    Label3          : TLabel;
+    Label4          : TLabel;
+    Label5          : TLabel;
+    ListView1       : TListView;
+    Memo1           : TMemo;
     procedure btnCloseClick(Sender: TObject);
     procedure btnInfoClick(Sender: TObject);
     procedure cbxCountryClick(Sender: TObject);
-    procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure FormResize(Sender: TObject);
+    procedure FormShow(Sender: TObject);
+    procedure ListView1SelectItem(Sender: TObject; Item: TListItem; Selected: Boolean);
   private
     Stmt_Description: ISqlite3Statement;
     procedure CreateDatabase;
@@ -44,8 +44,6 @@ type
     procedure LoadListView;
     procedure ReadCsvIntoDatabase;
     procedure ResizeColumns;
-  public
-    //
   end;
 
 var
@@ -109,19 +107,19 @@ end;
 
 {$ENDREGION}
 
-    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
-    var
-      Count: integer;
-      Result: string;
-    begin
-      Count := TSqlite3.ValueInt(Args[0]);
-      case Count of
-        0..500:       Result := 'Small';
-        501..5000:    Result := 'Medium';
-        5001..MaxInt: Result := 'Large';
-      end;
-      TSqlite3.ResultText(Context, Result);
-    end;
+procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
+var
+  Count: integer;
+  ResultText: string;
+begin
+  Count := TSqlite3.ValueInt(Args[0]);
+  case Count of
+    0..500:       ResultText := 'Small';
+    501..5000:    ResultText := 'Medium';
+    5001..MaxInt: ResultText := 'Large';
+  end;
+  TSqlite3.ResultText(Context, ResultText);
+end;
 
 procedure TMainForm.CreateDatabase;
 begin

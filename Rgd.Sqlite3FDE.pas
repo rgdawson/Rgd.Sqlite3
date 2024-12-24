@@ -382,14 +382,14 @@ type
     class function OpenDatabaseIntoMemory(const FileName: string): ISqlite3Database;
     class procedure ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
     {Application Defined function helpers...}
-    class function ValueText(Value: PSqlite3Value): string;                {Value Argument as string}
-    class procedure ResultText(Context: PSQLite3Context; Value: string);   {Sets Result as string}
-    class function ValueInt(Value: PSqlite3Value): integer;                {Value Argument as integer}
-    class procedure ResultInt(Context: PSQLite3Context; Value: integer);   {Sets Result as integer}
-    class function ValueInt64(Value: PSqlite3Value): Int64;                {Value Argument as Int64}
-    class procedure ResultInt64(Context: PSQLite3Context; Value: Int64);   {Sets Result as Int64}
-    class function ValueDouble(Value: PSqlite3Value): Double;              {Value Argument as Double}
-    class procedure ResultDouble(Context: PSQLite3Context; Value: Double); {Sets Result as Double}
+    class function ValueText(Value: PSqlite3Value): string;
+    class function ValueInt(Value: PSqlite3Value): integer;
+    class function ValueInt64(Value: PSqlite3Value): Int64;
+    class function ValueDouble(Value: PSqlite3Value): Double;
+    class procedure ResultText(Context: PSQLite3Context; Result: string);
+    class procedure ResultInt(Context: PSQLite3Context; Result: integer);
+    class procedure ResultInt64(Context: PSQLite3Context; Result: Int64);
+    class procedure ResultDouble(Context: PSQLite3Context; Result: Double);
   end;
 
 var
@@ -642,8 +642,6 @@ begin
 end;
 
 procedure TSqlite3Database.Close;
-var
-  i: integer;
 begin
   if FFDConnection.Connected then
   begin
@@ -652,7 +650,7 @@ begin
       Rollback;
 
     {Finalize, if any, remaining open Stmt handles...}
-    for i := FStatementList.Count-1 downto 0 do
+    for var i := FStatementList.Count-1 downto 0 do
     begin
       sqlite3_finalize(TSqlite3Statement(FStatementList[i]).FHandle);
       TSqlite3Statement(FStatementList[i]).FHandle := nil;
@@ -660,7 +658,7 @@ begin
     end;
 
     {Close, if  any, remaining open Blob handlers...}
-    for i := 0 to FBlobHandlerList.Count-1 do
+    for var i := 0 to FBlobHandlerList.Count-1 do
     begin
       sqlite3_blob_close(TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle);
       TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle := nil;
@@ -684,7 +682,8 @@ begin
 end;
 
 procedure TSqlite3Database.Fetch(const SQL: string; const StmtProc: TStmtProc);
-var Stmt: ISqlite3Statement;
+var
+  Stmt: ISqlite3Statement;
 begin
   Stmt := Prepare(SQL);
   while Stmt.Step = SQLITE_ROW do
@@ -808,12 +807,10 @@ end;
 {$REGION ' TSqlite3Statment '}
 
 constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL: string);
-var
-  pzTail: PByte;
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  pzTail := nil;
+  var pzTail:PByte := nil;
   FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(PUtf8(UTF8Encode(SQL))), SQL_NTS, FHandle, pzTail));
   FOwnerDatabase.StatementList.Add(Pointer(Self));
 end;
@@ -863,7 +860,6 @@ end;
 
 procedure TSQLite3Statement.BindParams(const Params: array of const);
 var
-  i: integer;
   ParamInt: integer;
   ParamInt64: Int64;
   ParamDouble: Double;
@@ -874,7 +870,7 @@ begin
 
   {Reset and Bind all params...}
   Reset;
-  for i := 0 to High(Params) do
+  for var i := 0 to High(Params) do
   begin
     ASqlParam := GetSqlParam(i+1);
     case Params[i].VType of
@@ -915,13 +911,12 @@ begin
 end;
 
 procedure TSQLite3Statement.BindParams(const Params: TArray<string>);
-var i: integer;
 begin
   Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
 
   {Reset and BindText all params...}
   Reset;
-  for i := 0 to High(Params) do
+  for var i := 0 to High(Params) do
     GetSqlParam(i+1).BindText(Params[i]);
 end;
 
@@ -1094,19 +1089,9 @@ begin
   Result := UTF8ToString(PUtf8(sqlite3_value_text(Value)));
 end;
 
-class procedure TSqlite3.ResultText(Context: PSQLite3Context; Value: string);
-begin
-  sqlite3_result_text(Context, PByte(PUtf8(UTF8Encode(Value))), SQL_NTS, nil);
-end;
-
 class function TSqlite3.ValueInt(Value: PSqlite3Value): integer;
 begin
   Result := sqlite3_value_int(Value);
-end;
-
-class procedure TSqlite3.ResultInt(Context: PSQLite3Context; Value: integer);
-begin
-  sqlite3_result_int(Context, Value);
 end;
 
 class function TSqlite3.ValueInt64(Value: PSqlite3Value): Int64;
@@ -1114,21 +1099,30 @@ begin
   Result := sqlite3_value_int64(Value);
 end;
 
-class procedure TSqlite3.ResultInt64(Context: PSQLite3Context; Value: int64);
-begin
-  sqlite3_result_int64(Context, Value);
-end;
-
 class function TSqlite3.ValueDouble(Value: PSqlite3Value): Double;
 begin
   Result := sqlite3_value_Double(Value);
 end;
 
-class procedure TSqlite3.ResultDouble(Context: PSQLite3Context; Value: Double);
+class procedure TSqlite3.ResultText(Context: PSQLite3Context; Result: string);
 begin
-  sqlite3_result_Double(Context, Value);
+  sqlite3_result_text(Context, PByte(PUtf8(UTF8Encode(Result))), SQL_NTS, nil);
 end;
 
+class procedure TSqlite3.ResultInt(Context: PSQLite3Context; Result: integer);
+begin
+  sqlite3_result_int(Context, Result);
+end;
+
+class procedure TSqlite3.ResultInt64(Context: PSQLite3Context; Result: Int64);
+begin
+  sqlite3_result_int64(Context, Result);
+end;
+
+class procedure TSqlite3.ResultDouble(Context: PSQLite3Context; Result: Double);
+begin
+  sqlite3_result_Double(Context, Result);
+end;
 
 {$ENDREGION}
 

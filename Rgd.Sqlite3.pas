@@ -388,50 +388,30 @@ var
 
 Implementation
 
+{$REGION ' Utility '}
+
 function CompareVersions(const S1, S2: string): integer;
-var
-  Version: TStringDynArray;
-  Major1, Minor1, Release1, Build1: integer;
-  Major2, Minor2, Release2, Build2: integer;
-begin
-  Version := SplitString(S1, '.');
-  Major1 := Version[0].ToInteger;
-  Minor1   := 0;
-  if High(Version) >= 1 then
-    Minor1 := Version[1].ToInteger;
-  Release1 := 0;
-  if High(Version) >= 2 then
-    Release1 := Version[2].ToInteger;
-  Build1   := 0;
-  if High(Version) >= 3 then
-    Build1 := Version[3].ToInteger;
 
-  Version := SplitString(S1, '.');
-  Major2 := Version[0].ToInteger;
-  Minor2   := 0;
-  if High(Version) >= 1 then
-    Minor2 := Version[1].ToInteger;
-  Release2 := 0;
-  if High(Version) >= 2 then
-    Release2 := Version[2].ToInteger;
-  Build2   := 0;
-  if High(Version) >= 3 then
-    Build2 := Version[3].ToInteger;
-
-  Result := CompareValue(Major1, Major2);
-  if Result = 0 then
+  function ParseVersionStr(VerStr: string): TArray<integer>;
   begin
-    Result := CompareValue(Minor1, Minor2);
-    if Result = 0 then
-    begin
-      Result := CompareValue(Release1, Release2);
-      if Result = 0 then
-      begin
-        Result := CompareValue(Build1, Build2);
-      end;
-    end;
+    var StrArray := SplitString(VerStr, '.');
+    Result := TArray<integer>.Create(0, 0, 0, 0);
+    for var i := 0 to High(StrArray) do
+      Result[i] := StrArray[i].ToInteger;
+  end;
+
+begin
+  var Version1 := ParseVersionStr(S1);
+  var Version2 := ParseVersionStr(S2);
+  for var i := 0 to 3 do
+  begin
+    Result := CompareValue(Version1[i], Version2[i]);
+    if Result <> 0 then
+      break;
   end;
 end;
+
+{$ENDREGION}
 
 {$REGION ' Sqlite DLL Api Externals '}
 
@@ -1198,12 +1178,12 @@ end;
 {$ENDREGION}
 
 Initialization
-const
-  ErrMsg = 'Sqlite3.dll Version 3.42.0 or greater not found.  Application will terminate.';
 begin
   {$IFDEF SQLITE_USE_DLL}
-  if CompareVersions(TSqlite3.VersionStr, '3.42.0') < 0 then
+  var MinVersion := '3.42.0';
+  if CompareVersions(TSqlite3.VersionStr, MinVersion) < 0 then
   begin
+    var ErrMsg := Format('Sqlite3.dll Version %s or greater not found.  Application will terminate.', [MinVersion]);
     {$IFNDEF CONSOLE}
     ShowMessage(ErrMsg);
     Application.Terminate;

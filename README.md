@@ -25,11 +25,11 @@ Query Patterns:
         '       ID' +
         '  FROM Tasks');
       while Stmt.Step = SQLITE_ROW do
-      being
+      begin
         S0 := Stmt.SqlColumn[0].AsText;
         ID := Stmt.SqlColumn[1].AsInt;
         {...}
-      end);
+      end;
     end;
 
     {Pattern 2 - with DB.Prepare and Fetch(procedure)...}

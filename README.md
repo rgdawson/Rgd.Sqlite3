@@ -15,7 +15,7 @@ Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonymous met
 for which I got by reading "Coding in Delphi" by Nick Hodges, plus some flexible goodies for
 binding and fetching data, creating user-defined sql functions, and performing transactions.
 
-Query Patterns:
+Query Patterns: (I tend to use Pattern 2, but I know some hate 'with' statements, so I have provided alternatives.)
 
     {Example Pattern 1 - Stmt := DB.Prepare() and while Stmt.Step...}
     var

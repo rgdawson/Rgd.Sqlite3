@@ -1,7 +1,8 @@
 # Rgd.Sqlite3
 Rgd.SQLite3 for Delphi - A light-weight, simple, effective Sqlite3 interface unit
 
-Can use sqlite3.dll dynamically or statically link the sqlite3 library.
+Can use your own sqlite3.dll dynamically or statically link the sqlite3 library that comes from 
+Delphi's FireDAC.Phys.SQLiteWrapper.Stat.
 
 For encryption, use Rgd.Sqlite3FDE.pas to statically link the FireDAC Encryption version 
 of Sqlite and access FireDAC encrypted databases.

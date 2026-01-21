@@ -1,11 +1,12 @@
 # Rgd.Sqlite3
 Rgd.SQLite3 for Delphi - A light-weight, simple, effective Sqlite3 interface unit
 
-Can use your own sqlite3.dll dynamically or statically link the sqlite3 library that comes from 
-Delphi's FireDAC.Phys.SQLiteWrapper.Stat.
+Can use sqlite3.dll or the Windows component version WinSQlite3.dll'
 
 For encryption, use Rgd.Sqlite3FDE.pas to statically link the FireDAC Encryption version 
-of Sqlite and access FireDAC encrypted databases.
+of Sqlite and access FireDAC encrypted databases.  The FireDAC version for encryption is old
+and that encryption method is deprecated/removed from current Sqlite.  If you need encryption look
+at "Sqlite3 Multiple Ciphers" (from github.com/utelle/SQLite3MultipleCiphers/) for new development.
 
 Credits:
 
@@ -13,7 +14,7 @@ This unit borrows ideas from Yury Plashenkov in https://github.com/plashenkov/SQ
 which I have always admired for its genius simplicity and clarity.  With Yuri's concepts in mind,
 Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonymous methods, the ideas
 for which I got by reading "Coding in Delphi" by Nick Hodges, plus some flexible goodies for
-binding and fetching data, creating user-defined sql functions, and performing transactions.
+binding and fetching data, and performing transactions.
 
 Query Patterns: (I tend to use Pattern 2, but I know some hate 'with' statements, so I have provided alternatives.)
 

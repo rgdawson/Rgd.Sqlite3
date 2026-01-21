@@ -12,7 +12,6 @@ object MainForm: TMainForm
   Font.Height = -12
   Font.Name = 'Segoe UI'
   Font.Style = []
-  OnClose = FormClose
   OnResize = FormResize
   OnShow = FormShow
   DesignSize = (
@@ -57,6 +56,13 @@ object MainForm: TMainForm
     Width = 71
     Height = 15
     Caption = 'Size Category'
+  end
+  object Image1: TImage
+    Left = 392
+    Top = 477
+    Width = 75
+    Height = 75
+    Stretch = True
   end
   object ListView1: TListView
     Left = 8
@@ -145,7 +151,7 @@ object MainForm: TMainForm
     TabOrder = 4
     OnClick = btnInfoClick
   end
-  object cbxSizeCategory: TComboBox
+  object cbxSizeCat: TComboBox
     Left = 374
     Top = 8
     Width = 213

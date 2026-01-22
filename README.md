@@ -1,7 +1,7 @@
 # Rgd.Sqlite3
 Rgd.SQLite3 for Delphi - A light-weight, simple, effective Sqlite3 interface unit
 
-Can use sqlite3.dll or the Windows component version WinSQlite3.dll'
+Can use sqlite3.dll or the Windows component version WinSqlite3.dll'
 
 For encryption, use Rgd.Sqlite3FDE.pas to statically link the FireDAC Encryption version 
 of Sqlite and access FireDAC encrypted databases.  The FireDAC version for encryption is old

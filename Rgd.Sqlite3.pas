@@ -639,8 +639,6 @@ begin
 
   {Always enable foreign keys...}
   Execute('pragma foreign_keys = on');
-  {Default journal_mode=memory; synchronous=off}
-  Execute('pragma journal_mode = memory; pragma synchronous = off');
 end;
 
 procedure TSqlite3Database.OpenIntoMemory(const Filename: string);

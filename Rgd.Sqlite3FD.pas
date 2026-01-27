@@ -1,26 +1,18 @@
-Unit Rgd.Sqlite3FDE;
+Unit Rgd.Sqlite3FD;
 
 Interface
 
 {$REGION ' Comments '}
 
-(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * This is a variation of Rgd.Sqlite3.pas that links the Delphi FireDAC Encryption (FDE) version
- * FireDAC.Phys.SQLiteWrapper.FDEStat. This statically linked pre-built version of Sqlite3 is
- * version 3.31.1.  It last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC, which
- * is the encryption mechanism that FireDAC uses. It was removed Feb 7, 2020 as part of version 3.32.0.
+(**************************************************************************************************************
+ *  This unit supports:
+ *    FireDAC sqlite3 statically linked unit (FireDAC.Phys.SQLiteWrapper.Stat).
+ *      - Statically Links to unit: FireDAC.Phys.SQLiteWrapper.Stat
+ *      - Embarcadero's own FireDAC unit, version 3.42.0 as of Delphi 12.3 and 13.
+ *      - This is the only way to embed sqlite in a 32-bit app
+ *      - Intended for comparison testing and for curiosity sake, I can't see why I would ever use this in production
  *
- * The approach taken here is to use a bit of FireDAC to create the connection (TFDConnection) to the
- * database including the password.  Once that is done we get the native PSqlite3 handle from
- * FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle and proceed as we do
- * in Rgd.Sqlite3.
- *
- * This was just an exercise in curiosity and to compare approaches.  At this point is makes
- * no sense to use this approach.  New development should usually just link to WinSqlite3.dll, or
- * if encryption is required, then link to Sqlite3mc.dll (Multi-Cipher version of Sqlite3)
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
-
+ **************************************************************************************************************)
 
 {$ENDREGION}
 
@@ -34,15 +26,7 @@ uses
   System.SyncObjs,
   System.StrUtils,
   {$IFNDEF CONSOLE}Vcl.Dialogs, Vcl.Forms,{$ENDIF}
-  System.Diagnostics,
-  FireDAC.Stan.Def,
-  FireDAC.Stan.Intf,
-  FireDAC.Comp.UI,
-  FireDAC.Comp.Client,
-  FireDAC.VCLUI.Wait,
-  FireDAC.Phys.SQLite,
-  FireDAC.Phys.SQLiteWrapper,
-  FireDAC.Phys.SQLiteWrapper.FDEStat,
+  FireDAC.Phys.SQLiteWrapper.Stat,
   System.Math;
 
 {$ENDREGION}
@@ -108,10 +92,10 @@ type
 
  {Column, Parameter Accessors...}
 
- (* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+ (*************************************************************************************************
   * TSqlParam, TSqlColumn are not intended to be declared as variables. These are return values
   * for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.
-  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+  *************************************************************************************************)
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -127,7 +111,7 @@ type
 
   TSqlColumn = record
     [unsafe] FStmt: ISqlite3Statement;
-    FColumnIndex : integer;
+    FColumnIndex: integer;
     function AsBool   : Boolean;
     function AsDouble : Double;
     function AsInt    : integer;
@@ -154,8 +138,8 @@ type
     function Check(const ErrCode: integer): integer;
     procedure CheckHandle;
   {Open/Close...}
-    procedure Open(const FileName: string; Password: string = '');
-    procedure OpenIntoMemory(const FileName: string; Password: string = '');
+    procedure Open(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT);
+    procedure OpenIntoMemory(const Filename: string);
     procedure Close;
     procedure Backup(const Filename: string);
   {Prepare...}
@@ -226,7 +210,7 @@ type
     function GetOwnerDatabase: ISqlite3Database;
   {Read/Write...}
     function BlobBytes: integer;
-    procedure Read(ByteArray: TBytes; const Offset, Size: integer);
+    procedure Read (ByteArray: TBytes; const Offset, Size: integer);
     procedure Write(ByteArray: TBytes; const Offset: integer; const Size: integer = -1);
   {Properties}
     property Handle: PSqlite3Blob read GetHandle;
@@ -240,7 +224,6 @@ type
 
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
   private
-    FFDConnection: TFDConnection;
     FHandle: PSqlite3;
     FFilename: string;
     FTransactionOpen: Boolean;
@@ -269,8 +252,8 @@ type
     function Check(const ErrCode: integer): integer;
     procedure CheckHandle;
   {Open/Close...}
-    procedure Open(const FileName: string; Password: string = '');
-    procedure OpenIntoMemory(const FileName: string; Password: string = '');
+    procedure Open(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT);
+    procedure OpenIntoMemory(const Filename: string);
     procedure Close;
     procedure Backup(const Filename: string);
   {Prepare SQL...}
@@ -365,9 +348,8 @@ type
     class function LibPath: string;
     class function VersionStr: string;
     class function CompileOptions: string;
-    class function OpenDatabase(const FileName: string; Password: string = ''): ISqlite3Database;
+    class function OpenDatabase(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
     class function OpenDatabaseIntoMemory(const Filename: string): ISqlite3Database;
-    class procedure ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
   {Application Defined function helpers...}
     class function AdfValueText(Value: PSqlite3Value): string;
     class function AdfValueInt(Value: PSqlite3Value): integer;
@@ -573,14 +555,14 @@ end;
 
 constructor TSqlite3Database.Create;
 begin
-  FFDConnection := TFDConnection.Create(nil);
   FBlobHandlerList := TList.Create;
   FStatementList := TList.Create;
+  sqlite3_initialize;
 end;
 
 destructor TSqlite3Database.Destroy;
 begin
-  FFDConnection.Free; {I'm guessing that the TFDConnection.Destroy calls close}
+  Close;
   FBlobHandlerList.Free;
   FStatementList.Free;
   inherited;
@@ -596,7 +578,7 @@ end;
 
 procedure TSqlite3Database.CheckHandle;
 begin
-  if Handle = nil then
+  if FHandle = nil then
     raise ESqliteError.Create(SDatabaseNotConnected, -1);
 end;
 
@@ -607,7 +589,7 @@ end;
 
 function TSqlite3Database.GetHandle: PSqlite3;
 begin
-  Result := FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle;
+  Result := FHandle;
 end;
 
 function TSqlite3Database.GetTransactionOpen: Boolean;
@@ -625,47 +607,36 @@ begin
   Result := FBlobHandlerList;
 end;
 
-procedure TSqlite3Database.Open(const FileName: string; Password: string = '');
+procedure TSqlite3Database.Open(const Filename: string; OpenFlags: integer);
 begin
   Close;
   FFilename := Filename;
-  FFDConnection.DriverName := 'SQLite';
-  FFDConnection.Params.Database := Filename;
-  FFDConnection.Params.Password := Password;
-  FFDConnection.Open;
-  if not SameText(Filename, ':memory:') then
-  begin
-    Execute('pragma journal_mode=DELETE');   //delete,truncate,persist,memory,off
-    Execute('pragma synchronous=FULL');      //0=off, 1=normal,2=full,3=extra
-  end;
+
+  {Open database...}
+  Check(sqlite3_open_v2(PUtf8(Utf8Encode(FFilename)), FHandle, OpenFlags, nil));
+
+  {Always enable foreign keys...}
+  Execute('pragma foreign_keys = on');
 end;
 
-procedure TSqlite3Database.OpenIntoMemory(const FileName: string; Password: string = '');
+procedure TSqlite3Database.OpenIntoMemory(const Filename: string);
 var
-  SqliteDriverLink: TFDPhysSqliteDriverLink;
-  SqliteBackup: TFDSqliteBackup;
+  TempDB: ISqlite3Database;
+  Backup: PSqliteBackup;
 begin
-  Open(':memory:', Password);
-  SqliteDriverLink := TFDPhysSqliteDriverLink.Create(nil);
-  SqliteDriverLink.EngineLinkage := slFDEStatic;
-  SqliteBackup := TFDSqliteBackup.Create(nil);
-  try
-    SqliteBackup.DriverLink := SqliteDriverLink;
-    SqliteBackup.Database := FileName;
-    SqliteBackup.Password := Password;
-    SqliteBackup.DestMode := smCreate;
-    SqliteBackup.DestDatabaseObj := FFDConnection.CliObj;
-    SqliteBackup.DestPassword := Password;
-    SqliteBackup.Backup;
-  finally
-    SqliteBackup.Free;
-    SqliteDriverLink.Free;
-  end;
+  TempDB := TSqlite3Database.Create;
+  Open(MEMORY, SQLITE_OPEN_DEFAULT);  {Memory databases don't get encrypted}
+  FFilename := Filename;
+  TempDB.Open(Filename, SQLITE_OPEN_READONLY);
+  Backup := sqlite3_backup_init(Self.Handle, PByte(PAnsiChar('main')), TempDB.Handle, PByte(PAnsiChar('main')));
+  sqlite3_backup_step(Backup, -1);
+  sqlite3_backup_finish(Backup);
+  TempDB.Close;
 end;
 
 procedure TSqlite3Database.Close;
 begin
-  if FFDConnection.Connected then
+  if Assigned(FHandle) then
   begin
     {Rollback if transaction left open (Sqlite should do this automatically, but we are doing it explcitly anyway)...}
     if FTransactionOpen then
@@ -692,8 +663,8 @@ begin
       TSqlite3BlobHandler(FBlobHandlerList[i]).FHandle := nil;
       FBlobHandlerList.Delete(i);
     end;
-
-    FFDConnection.Close;
+    Check(sqlite3_close(Handle));
+    FHandle := nil;
     FFilename := '';
   end;
 end;
@@ -1057,13 +1028,13 @@ end;
 
 class function TSqlite3.LibPath: string;
 begin
-  Result := 'FireDAC.Phys.SQLiteWrapper.FDEStat';
+    Result := 'FireDAC.Phys.SQLiteWrapper.Stat';
 end;
 
-class function TSqlite3.OpenDatabase(const FileName: string; Password: string = ''): ISqlite3Database;
+class function TSqlite3.OpenDatabase(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
 begin
   Result := TSqlite3Database.Create;
-  Result.Open(Filename, Password);
+  Result.Open(Filename, OpenFlags);
 end;
 
 class function TSqlite3.OpenDatabaseIntoMemory(const Filename: string): ISqlite3Database;
@@ -1076,36 +1047,6 @@ class function TSqlite3.ThreadSafe: Boolean;
 begin
   {FireDAC unit does not have sqlite3_threadsafe function, but it is threadsafe}
   Result := TRUE;
-end;
-
-class procedure TSqlite3.ChangePassword(DbFilename: string; OldPassword, NewPassword: string);
-var
-  SqliteDriverLink: TFDPhysSqliteDriverLink;
-  Security: TFDSQLiteSecurity;
-begin
-  SqliteDriverLink := TFDPhysSqliteDriverLink.Create(nil);
-  Security := TFDSQLiteSecurity.Create(nil);
-  try
-    SqliteDriverLink.EngineLinkage := slFDEStatic;
-    Security.DriverLink := SqliteDriverLink;
-    Security.Database := DbFileName;
-    Security.Password := OldPassword;
-
-    if NewPassword <> '' then
-    begin
-      Security.ToPassword := NewPassword;
-      Security.ChangePassword;
-    end
-    else
-    begin
-      Security.ToPassword := '';
-      Security.RemovePassword;
-    end;
-
-  finally
-    Security.Free;
-    SqliteDriverLink.Free;
-  end;
 end;
 
 class function TSqlite3.AdfValueText(Value: PSqlite3Value): string;
@@ -1149,10 +1090,5 @@ begin
 end;
 
 {$ENDREGION}
-
-Initialization
-begin
-  FDManager.SilentMode := True;
-end;
 
 End.

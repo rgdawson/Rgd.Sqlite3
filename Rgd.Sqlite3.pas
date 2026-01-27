@@ -11,7 +11,7 @@ Interface
  *
  *  WinSqlite3.dll has been a Windows core component since Windows 10.
  *    - In January 2026, Windows 11 updated WinSqlite3.dll from v3.43.2 to v3.51.1.
- *    - Similar precompiled Sqlite3.dll from Sqlite.org
+ *    - WinSqlite.dll is similar to precompiled Sqlite3.dll from Sqlite.org except:
  *      - Uses stdcall calling convention (only applicable to 32-bit)
  *      - Does NOT include: ENABLE_MATH_FUNCTIONS, ENABLE_PERCENTILE, LOCALTIME, CARRYA
  *      - DOES include: FTS3_PARENTHESIS, FTS4, RBU, STAT4, API_ARMOR
@@ -403,7 +403,7 @@ type
  *    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar
  **************************************************************************************************************)
 
-const SQLITE3_DLL = {$IFDEF SQLITE_WIN}'winsqlite3.dll'{$ELSE}'sqlite3.dll'{$ENDIF};
+const SQLITE3_DLL = {$IFDEF SQLITE_WIN}'WinSqlite3.dll'{$ELSE}'Sqlite3.dll'{$ENDIF};
 
 function sqlite3_config(Option: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_initialize: integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
@@ -639,6 +639,9 @@ begin
 
   {Always enable foreign keys...}
   Execute('pragma foreign_keys = on');
+
+  if Filename = MEMORY then
+    Execute('pragma synchronous=off');
 end;
 
 procedure TSqlite3Database.OpenIntoMemory(const Filename: string);

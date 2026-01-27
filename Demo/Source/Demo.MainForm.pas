@@ -59,9 +59,7 @@ const
 
 var
   USE_MEM_DB    : Boolean = TRUE;
-  WITHOUT_ROWID : Boolean = TRUE;
-  TEST_BLOB     : Boolean = TRUE;
-  TEST_ADF      : Boolean = TRUE;
+  TEST_BLOB     : Boolean = FALSE;
 
 {$REGION ' Events '}
 
@@ -178,109 +176,34 @@ begin
   else
   begin
     DeleteFile(DbName);
+    {$IFDEF SQLITE_CIPHER}
+    DB := TSqlite3.OpenDatabase(DbName, 'xyz123');
+    {$ELSE}
     DB := TSqlite3.OpenDatabase(DbName);
+    {$ENDIF}
   end;
 
   {Create Table...}
-  if TEST_ADF then
+  DB.Execute('''
+    CREATE TABLE Organizations (
+      OrgID        TEXT PRIMARY KEY,
+      Name         TEXT,
+      Website      TEXT,
+      Country      TEXT,
+      Description  TEXT,
+      Founded      TEXT,
+      Industry     TEXT,
+      HeadCount    INTEGER)
+    ''');
+  DB.AdfCreateFunction('SizeCategory', 1, @SqlAdf_SizeCategory);
+
+  if TEST_BLOB then
   begin
-    {This is faster for mem DBs (2x)}
-    if WITHOUT_ROWID then
-    begin
-      {This seems a touch faster for file DBs}
-      DB.Execute('''
-        CREATE TABLE Organizations (
-          OrgID        TEXT NOT NULL,
-          Name         TEXT,
-          Website      TEXT,
-          Country      TEXT,
-          Description  TEXT,
-          Founded      TEXT,
-          Industry     TEXT,
-          HeadCount    INTEGER,
-        PRIMARY KEY (OrgID ASC))
-        WITHOUT ROWID
-        ''');
-      if TEST_BLOB then
-      begin
-        DB.Execute('''
-          CREATE TABLE BlobData (
-            OrgID  TEXT NOT NULL,
-            Data   BLOB,
-          PRIMARY KEY (OrgID ASC))
-          WITHOUT ROWID
-          ''');
-      end;
-    end
-    else
-    begin
-      DB.Execute('''
-        CREATE TABLE Organizations (
-          OrgID        TEXT,
-          Name         TEXT,
-          Website      TEXT,
-          Country      TEXT,
-          Description  TEXT,
-          Founded      TEXT,
-          Industry     TEXT,
-          HeadCount    INTEGER)
-        ''');
-      if TEST_BLOB then
-      begin
-        DB.Execute('''
-          CREATE TABLE BlobData (
-            OrgID  TEXT,
-            Data   BLOB)
-          ''');
-      end;
-    end;
-    DB.AdfCreateFunction('SizeCategory', 1, @SqlAdf_SizeCategory);
-  end
-  else
-  begin
-    if WITHOUT_ROWID then
-    begin
-      DB.Execute('''
-        CREATE TABLE Organizations (
-          OrgID        TEXT NOT NULL,
-          Name         TEXT,
-          Website      TEXT,
-          Country      TEXT,
-          Description  TEXT,
-          Founded      TEXT,
-          Industry     TEXT,
-          HeadCount    INTEGER,
-          EmployeeCategory TEXT GENERATED ALWAYS AS (
-            CASE
-              WHEN (HeadCount >= 0)   AND (HeadCount <= 500)  THEN 'Small'
-              WHEN (HeadCount >= 501) AND (HeadCount <= 5000) THEN 'Medium'
-              ELSE 'Large'
-            END),
-        PRIMARY KEY (OrgID ASC))
-        WITHOUT ROWID
-        ''');
-    end
-    else
-    begin
-      DB.Execute('''
-        CREATE TABLE Organizations (
-          OrgID        TEXT NOT NULL,
-          Name         TEXT,
-          Website      TEXT,
-          Country      TEXT,
-          Description  TEXT,
-          Founded      TEXT,
-          Industry     TEXT,
-          HeadCount    INTEGER,
-          EmployeeCategory TEXT GENERATED ALWAYS AS (
-            CASE
-              WHEN (HeadCount >= 0)   AND (HeadCount <= 500)  THEN 'Small'
-              WHEN (HeadCount >= 501) AND (HeadCount <= 5000) THEN 'Medium'
-              ELSE 'Large'
-            END)
-          )
-        ''');
-    end;
+    DB.Execute('''
+      CREATE TABLE BlobData (
+        OrgID  TEXT PRIMARY KEY,
+        Data   BLOB)
+      ''');
   end;
 end;
 
@@ -318,26 +241,13 @@ begin
 
     SW := TStopWatch.StartNew;
 
-    if TEST_ADF then
-    begin
-      Stmt := DB.Prepare('''
-        SELECT OrgID, Name, Website, Country, Industry, Founded, HeadCount, SizeCategory(HeadCount) AS EmployeeCategory
-          FROM Organizations
-         WHERE Country LIKE ?
-           AND EmployeeCategory LIKE ?
-         ORDER BY 2
-        ''');
-    end
-    else
-    begin
-      Stmt := DB.Prepare('''
-        SELECT OrgID, Name, Website, Country, Industry, Founded, HeadCount, EmployeeCategory
-          FROM Organizations
-         WHERE Country LIKE ?
-           AND EmployeeCategory LIKE ?
-         ORDER BY 2
-        ''');
-    end;
+    Stmt := DB.Prepare('''
+      SELECT OrgID, Name, Website, Country, Industry, Founded, HeadCount, SizeCategory(HeadCount) As EmployeeCategory
+        FROM Organizations
+       WHERE Country LIKE ?
+         AND EmployeeCategory LIKE ?
+       ORDER BY 2
+      ''');
 
     with Stmt do BindAndFetch([FCountry, FSizeCat], procedure
     begin

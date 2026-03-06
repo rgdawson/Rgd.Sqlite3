@@ -2,21 +2,21 @@
 
 Interface
 
-(**************************************************************************************************************
- *  This unit supports:
- *    WinSqlite3.dll (Windows core component),
- *    Sqlite3.dll    (Precompiled or otherwise)
- *
- *  Define SQLITE_WIN in order to link to the Windows component WinSqlite3.dll
- *
- *  WinSqlite3.dll has been a Windows core component since Windows 10.
- *    - In January 2026, Windows 11 updated WinSqlite3.dll from v3.43.2 to v3.51.1.
- *    - WinSqlite.dll is similar to precompiled Sqlite3.dll from Sqlite.org except:
- *      - Uses stdcall calling convention (only applicable to 32-bit)
- *      - Does NOT include: ENABLE_MATH_FUNCTIONS, ENABLE_PERCENTILE, LOCALTIME, CARRYA
- *      - DOES include: FTS3_PARENTHESIS, FTS4, RBU, STAT4, API_ARMOR
- *
- **************************************************************************************************************)
+{--------------------------------------------------------------------------------------------------}
+{ This unit supports:                                                                              }
+{   Sqlite3.dll    (Precompiled or otherwise)                                                      }
+{   WinSqlite3.dll (Windows core component since Windows 10)                                       }
+{                                                                                                  }
+{ Define SQLITE_WIN in order to link to the Windows component WinSqlite3.dll                       }
+{ WinSqlite3.dll has been a Windows core component since Windows 10.                               }
+{   - Located in Windows\System32                                                                  }
+{   - In January 2026, Windows 11 updated WinSqlite3.dll from v3.43.2 to v3.51.1.                  }
+{   - WinSqlite.dll is similar to precompiled Sqlite3.dll from Sqlite.org except:                  }
+{     - Uses stdcall calling convention (only applicable to 32-bit)                                }
+{     - DOES NOT include: ENABLE_MATH_FUNCTIONS, ENABLE_PERCENTILE, LOCALTIME, CARRYA              }
+{     - DOES include: FTS3_PARENTHESIS, FTS4, RBU, STAT4, API_ARMOR                                }
+{                                                                                                  }
+{--------------------------------------------------------------------------------------------------}
 
 {$REGION ' Uses '}
 
@@ -26,9 +26,10 @@ uses
   System.Classes,
   System.SysUtils,
   System.SyncObjs,
-  System.StrUtils,
-  {$IFNDEF CONSOLE} Vcl.Dialogs, Vcl.Forms, {$ENDIF}
-  System.Math;
+  {$IFNDEF CONSOLE}
+  Vcl.Dialogs, Vcl.Forms,
+  {$ENDIF}
+  System.StrUtils;
 
 {$ENDREGION}
 
@@ -93,10 +94,8 @@ type
 
  {Column, Parameter Accessors...}
 
- (*************************************************************************************************
-  * TSqlParam, TSqlColumn are not intended to be declared as variables. These are return values
-  * for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.
-  *************************************************************************************************)
+ {TSqlParam and TSqlColumn are not intended to be declared as variables. These are return values
+  for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.}
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -214,10 +213,7 @@ type
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
   end;
 
-
-  (***********************************************************************************************
-   * ISqlite* Implementation classes...
-   ***********************************************************************************************)
+  {Sqlite Interface Implementations...}
 
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
   private
@@ -296,13 +292,13 @@ type
   end;
 
   TSqlite3BlobHandler = class(TInterfacedObject, ISqlite3BlobHandler)
-  (***********************************************************************************************
-   * FYI: ISqliteBlobHandler is used for very large BLOBs where you want to be read/write directly
-   *      or incrementally. I have never used it, as I have not dealt with very large BLOBs.
-   *      To get a Blob Handler, you use the DB.BlobOpen method, but you need to kow RowID,
-   *      so, you cannot use this on tables that are defined WITHOUT ROWID. It is more common to
-   *      use regular TSqlParam.BindBlob() and TSqlColumn.AsBlob methods to set/get BLOBs.
-   ***********************************************************************************************)
+    {--------------------------------------------------------------------------------------------------}
+    { ISqliteBlobHandler is for very large BLOBs where you want to be read/write directly              }
+    { and/or incrementally. I have never used it, as I have not dealt with very large BLOBs.           }
+    { To get a Blob Handler, you use the DB.BlobOpen method, but you need to know RowID,               }
+    { so, you cannot use this on tables that are defined WITHOUT ROWID. It is more common to           }
+    { use regular TSqlParam.BindBlob() and TSqlColumn.AsBlob methods to set/get smaller BLOBs.         }
+    {--------------------------------------------------------------------------------------------------}
   private
     FHandle: PSqlite3Blob;
     FOwnerDatabase: ISqlite3Database;
@@ -318,7 +314,6 @@ type
     destructor Destroy; override;
   end;
 
-  {General Global Sqlite Object/methods...}
   TSqlite3 = class
   private
     class var FSqliteVersion: string;
@@ -330,7 +325,7 @@ type
     class function CompileOptions: string;
     class function OpenDatabase(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
     class function OpenDatabaseIntoMemory(const Filename: string): ISqlite3Database;
-  {Application Defined function helpers...}
+  {Application Defined function helpers Adf* ...}
     class function AdfValueText(Value: PSqlite3Value): string;
     class function AdfValueInt(Value: PSqlite3Value): integer;
     class function AdfValueInt64(Value: PSqlite3Value): Int64;
@@ -346,24 +341,29 @@ var
 
 Implementation
 
+uses
+  System.Math;
+
 {$REGION ' Local Utility '}
 
-function CompareVersions(const S1, S2: string): integer;
+type
+  TSqlVersion = array [0..3] of integer;
 
-  function ParseVersionStr(VerStr: string): TArray<integer>;
-  begin
-    var StrArray := SplitString(VerStr, '.');
-    Result := TArray<integer>.Create(0, 0, 0, 0);
-    for var i := 0 to High(StrArray) do
-      Result[i] := StrArray[i].ToInteger;
-  end;
-
+function ParseVersionStr(VerStr: string): TSqlVersion;
 begin
-  var Version1 := ParseVersionStr(S1);
-  var Version2 := ParseVersionStr(S2);
+  Result := Default(TSqlVersion);
+  var StrArray := SplitString(VerStr, '.');
+  for var i := 0 to High(StrArray) do
+    Result[i] := StrArray[i].ToInteger;
+end;
+
+function CompareVersions(const S1, S2: string): TValueRelationship;
+begin
+  var V1 := ParseVersionStr(S1);
+  var V2 := ParseVersionStr(S2);
   for var i := 0 to 3 do
   begin
-    Result := CompareValue(Version1[i], Version2[i]);
+    Result := CompareValue(V1[i], V2[i]);
     if Result <> 0 then
       break;
   end;
@@ -392,16 +392,16 @@ type
   TSQLite3AggregateFinalize = procedure(ctx: PSQLite3Context); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
   TSQLite3DestructorType    = procedure(p: Pointer); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
 
-(**************************************************************************************************************
- *  This is the subset of sqlite3 function definitions required to support this unit.
- *
- *  I mimic these prototypes as defined in the FireDAC.Phys.SQLiteWrapper.Stat for consistency.
- *  FireDac likes to use PByte for text, so some additional typecasting is needed below.
- *  FireDAC param types:
- *    PByte (System.Types) = System.Byte = ^Byte
- *    PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar
- *    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar
- **************************************************************************************************************)
+{--------------------------------------------------------------------------------------------------}
+{   This is the subset of sqlite3 function definitions required to support this unit.              }
+{                                                                                                  }
+{   I mimic these prototypes as defined in the FireDAC.Phys.SQLiteWrapper.Stat for consistency.    }
+{   FireDac likes to use PByte for text, so some additional typecasting is needed below.           }
+{   FireDAC param types:                                                                           }
+{     PByte (System.Types) = System.Byte = ^Byte                                                   }
+{     PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar                                  }
+{     PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar                                                  }
+{--------------------------------------------------------------------------------------------------}
 
 const SQLITE3_DLL = {$IFDEF SQLITE_WIN}'WinSqlite3.dll'{$ELSE}'Sqlite3.dll'{$ENDIF};
 
@@ -668,10 +668,6 @@ begin
       Rollback;
 
     {Close Database...}
-    {Note: FDSTATIC does not include sqlite3_close_v2(), so we must use the older sqlite3_close().
-           The older sqlite3_close() will fail if all connection handles are not already closed.
-           So, if SQLITE_FDSTATIC is defined, we enable Statement and Blob Handler lists and close
-           them ourselves.}
     Check(sqlite3_close_v2(Handle));
     FHandle := nil;
     FFilename := '';
@@ -804,28 +800,27 @@ begin
 end;
 
 procedure TSqlite3Database.AdfCreateFunction(Name: string; ArgCount: integer; xFunc: TSQLite3RegularFunction);
-(**************************************************************************************************
- *  Application Defined Function:
- *
- *  Define and Register your application-defined Sqlite function something like the following:
- *
- *    procedure MyFunction(Context: Pointer; n: integer; Args: PPSQLite3ValueArray); stdcall;
- *    begin
- *      var Arg := TSqlite3.AdfValueText(args[0]); {Get the arument(s)}
- *      var AdfResult := SomeFunction(Arg);        {}
- *      TSqlite3.AdfResultText(Context, AdfResult);
- *    end;
- *
- *    The procedure has to match calling convention of sqlite3 dll, which is stdcall for WinSQlite3.dll.
- *
- *    DB.AdfCreateFunction('MyFunction', 1, @MyFunction);
- *
- *  After that, you can use the function in SQL statements
- *    SELECT MyFunction(MyField) FROM MyTable;
- *
- *  **You can't define an application-defined function anonmously.
- *
- **************************************************************************************************)
+{-------------------------------------------------------------------------------------------------------------}
+{   Application Defined Function:                                                                             }
+{                                                                                                             }
+{   Define and Register your application-defined Sqlite function something like the following:                }
+{                                                                                                             }
+{     procedure MyFunction(Context: Pointer; n: integer; Args: PPSQLite3ValueArray); stdcall or cdecl;        }
+{     begin                                                                                                   }
+{       var Arg := TSqlite3.AdfValueText(args[0]); //Get the arument(s)                                       }
+{       var AdfResult := SomeFunction(Arg);                                                                   }
+{       TSqlite3.AdfResultText(Context, AdfResult);                                                           }
+{     end;                                                                                                    }
+{                                                                                                             }
+{     DB.AdfCreateFunction('MyFunction', 1, @MyFunction);                                                     }
+{                                                                                                             }
+{   !! Calling convention must match the Sqlite DLL. For WinSqlite3.dll: sdtcall, otherwise cdecl             }
+{                                                                                                             }
+{   Then, you can use the function in SQL statements                                                          }
+{     SELECT MyFunction(MyField) FROM MyTable;                                                                }
+{                                                                                                             }
+{   You can't define an application-defined function anonmously.                                              }
+{-------------------------------------------------------------------------------------------------------------}
 begin
   sqlite3_create_function(Handle, PByte(Utf8Encode(Name)), ArgCount, SQLITE_UTF8 or SQLITE_DETERMINISTIC, nil, @xFunc, nil, nil);
 end;

@@ -59,7 +59,7 @@ const
 
 var
   USE_MEM_DB    : Boolean = TRUE;
-  TEST_BLOB     : Boolean = FALSE;
+  TEST_BLOB     : Boolean = TRUE;
 
 {$REGION ' Events '}
 

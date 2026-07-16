@@ -66,6 +66,7 @@ Create Datatabase pattern...
       {Create Table...}
       DB.Execute(
         ' CREATE TABLE Organizations ( ' +
+        '   OrgID              TEXT,' +        
         '   Name               TEXT,' +
         '   Website            TEXT,' +
         '   Country            TEXT,' +
@@ -117,18 +118,18 @@ Example: inserting records from a CSV file...
 
 Example: Application-Defined Function
 
-    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl;
+    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl; 
     var
       Count: integer;
       Result: string;
     begin
-      Count := TSqlite3.ValueInt(Args[0]);
+      Count := TSqlite3.AdfValueInt(Args[0]);
       case Count of
         0..500:       Result := 'Small';
         501..5000:    Result := 'Medium';
         5001..MaxInt: Result := 'Large';
       end;
-      TSqlite3.ResultText(Context, Result);
+      TSqlite3.AdfResultText(Context, Result);
     end;
 
     {...}

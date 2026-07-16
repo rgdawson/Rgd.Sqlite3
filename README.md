@@ -54,7 +54,7 @@ Query Patterns: (I tend to use Pattern 2, but I know some hate 'with' statements
       S0 := Stmt.SqlColumn[0].AsText;
       ID := Stmt.SqlColumn[1].AsInt;
       {...}
-    end;
+    end);
   
 Create Datatabase pattern...
     

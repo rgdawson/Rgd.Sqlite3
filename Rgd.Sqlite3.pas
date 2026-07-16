@@ -206,7 +206,7 @@ type
     function GetOwnerDatabase: ISqlite3Database;
   {Read/Write...}
     function BlobBytes: integer;
-    procedure Read(ByteArray: TBytes; const Offset, Size: integer);
+    procedure Read(var ByteArray: TBytes; const Offset, Size: integer);
     procedure Write(ByteArray: TBytes; const Offset: integer; const Size: integer = -1);
   {Properties}
     property Handle: PSqlite3Blob read GetHandle;
@@ -307,7 +307,7 @@ type
     function GetOwnerDatabase: ISqlite3Database;
   {Read/Write Blob...}
     function BlobBytes: integer;
-    procedure Read(ByteArray: TBytes; const Offset, Size: integer);
+    procedure Read(var ByteArray: TBytes; const Offset, Size: integer);
     procedure Write(ByteArray: TBytes; const Offset: integer; const Size: integer);
   public
     constructor Create(OwnerDatabase: ISqlite3Database; const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True);
@@ -379,6 +379,7 @@ const
   SQLITE_TRANSIENT = Pointer(-1);
   SQLITE_UTF8 = $00000001;
   SQLITE_DETERMINISTIC = $00000800;
+  BIND_NULL: Pointer = Pointer(1);
 
 type
   PUtf8           = PAnsiChar;
@@ -408,6 +409,7 @@ const SQLITE3_DLL = {$IFDEF SQLITE_WIN}'WinSqlite3.dll'{$ELSE}'Sqlite3.dll'{$END
 function sqlite3_config(Option: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_initialize: integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_libversion: PAnsiChar; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_errcode(DB: PSqlite3): Integer; stdcall; external SQLITE3_DLL;
 function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_threadsafe: integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
@@ -503,8 +505,15 @@ begin
 end;
 
 procedure TSqlParam.BindText(const Value: string);
+var
+  Utf8: UTF8String;
 begin
-  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(Utf8Encode(Value)), SQL_NTS, SQLITE_TRANSIENT));
+  Utf8 := Utf8Encode(Value);
+  if Utf8 = '' then
+    {Empty string: nil pointer would bind NULL, so pass a non-nil pointer to #0 with length 0...}
+    FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(PAnsiChar('')), 0, SQLITE_STATIC))
+  else
+    FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(Utf8), Length(Utf8), SQLITE_TRANSIENT));
 end;
 
 procedure TSqlParam.BindNull;
@@ -514,7 +523,10 @@ end;
 
 procedure TSqlParam.BindBlob(const Data: TBytes);
 begin
-  FStmt.OwnerDatabase.Check(sqlite3_bind_blob(FStmt.Handle, FParamIndex, Data, Length(Data), SQLITE_TRANSIENT));
+  if Length(Data) = 0 then
+    FStmt.OwnerDatabase.Check(sqlite3_bind_zeroblob(FStmt.Handle, FParamIndex, 0))
+  else
+    FStmt.OwnerDatabase.Check(sqlite3_bind_blob(FStmt.Handle, FParamIndex, Data, Length(Data), SQLITE_TRANSIENT));
 end;
 
 procedure TSqlParam.BindZeroBlob(const Size: integer);
@@ -528,7 +540,7 @@ end;
 
 function TSqlColumn.AsBool: Boolean;
 begin
-  Result := Boolean(sqlite3_column_int(FStmt.Handle, FColumnIndex));
+  Result := sqlite3_column_int(FStmt.Handle, FColumnIndex) <> 0;
 end;
 
 function TSqlColumn.ColBytes: Integer;
@@ -648,16 +660,37 @@ procedure TSqlite3Database.OpenIntoMemory(const Filename: string);
 var
   TempDB: ISqlite3Database;
   Backup: PSqliteBackup;
+  Rc: integer;
 begin
+  {Open the source file first, read-only, so a missing or corrupt file
+   fails cleanly BEFORE we discard whatever Self currently has open...}
   TempDB := TSqlite3Database.Create;
+  TempDB.Open(Filename, SQLITE_OPEN_READONLY);
+
   Open(MEMORY, SQLITE_OPEN_DEFAULT);
   FFilename := Filename;
-  TempDB.Open(Filename, SQLITE_OPEN_READONLY);
-  Backup := sqlite3_backup_init(Self.Handle, PByte(PAnsiChar('main')), TempDB.Handle, PByte(PAnsiChar('main')));
-  sqlite3_backup_step(Backup, -1);
-  sqlite3_backup_finish(Backup);
+  try
+    Backup := sqlite3_backup_init(Self.Handle, PByte(PAnsiChar('main')), TempDB.Handle, PByte(PAnsiChar('main')));
+    if Backup = nil then
+      {backup_init reports its error on the DESTINATION handle...}
+      raise ESqliteError.Create(
+        Format(SErrorMessage, [sqlite3_errcode(Handle), Utf8ToString(sqlite3_errmsg(Handle))]), sqlite3_errcode(Handle));
+    try
+      sqlite3_backup_step(Backup, -1);
+    finally
+      {finish must ALWAYS be called to release the backup object; it returns
+       SQLITE_OK on success or the first error encountered during step...}
+      Rc := sqlite3_backup_finish(Backup);
+    end;
+    Check(Rc);
+  except
+    {Don't leave a half-populated :memory: database behind...}
+    Close;
+    raise;
+  end;
   TempDB.Close;
 end;
+
 
 procedure TSqlite3Database.Close;
 begin
@@ -696,9 +729,16 @@ begin
   Result := Prepare(Format(SQL, FmtParams));
 end;
 
+function TSqlite3Database.FetchCount(const SQL: string; const FmtParams: array of const): integer;
+begin
+  Result := FetchCount(Format(SQL, FmtParams));
+end;
+
 function TSqlite3Database.BindAndFetchCount(const Params: array of const; const SQL: string): integer;
 begin
-  Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
+  if not(ContainsText(SQL, 'SELECT Count(')) then
+    raise Exception.Create(SImproperSQL);
+
   with Prepare(SQL) do
   begin
     BindParams(Params);
@@ -709,7 +749,9 @@ end;
 
 function TSqlite3Database.FetchCount(const SQL: string): integer;
 begin
-  Assert(ContainsText(SQL, 'SELECT Count('), SImproperSQL);
+  if not(ContainsText(SQL, 'SELECT Count(')) then
+    raise Exception.Create(SImproperSQL);
+
   with Prepare(SQL) do
   begin
     Step;
@@ -717,10 +759,6 @@ begin
   end;
 end;
 
-function TSqlite3Database.FetchCount(const SQL: string; const FmtParams: array of const): integer;
-begin
-  Result := FetchCount(Format(SQL, FmtParams));
-end;
 
 function TSqlite3Database.FetchCountFmt(const SQL: string; const FmtParams: array of const): integer;
 begin
@@ -878,8 +916,12 @@ begin
 end;
 
 procedure TSQLite3Statement.BindParams(const Params: array of const);
+  {nil = skip: leave existing binding untouched (NULL if never bound).
+   BIND_NULL = explicitly bind NULL, replacing any previous binding...}
 begin
-  Assert(High(Params) = sqlite3_bind_parameter_count(FHandle)-1, SParamCountMismatch);
+  //Assert(High(Params) = sqlite3_bind_parameter_count(FHandle)-1, SParamCountMismatch);
+  if High(Params) <> sqlite3_bind_parameter_count(FHandle)-1 then
+    raise Exception.Create(SParamCountMismatch);
   {Reset and Bind all params...}
   Reset;
   for var i := 0 to High(Params) do
@@ -891,12 +933,19 @@ begin
       vtInteger:       ASqlParam.BindInt(Params[i].VInteger);
       vtExtended:      ASqlParam.BindDouble(Double(Params[i].VExtended^));
       vtInt64:         ASqlParam.BindInt64(Params[i].VInt64^);
-      vtPointer:       if Params[i].VPointer <> nil then raise Exception.CreateFmt(STypeNotSupported, [Params[i].VType]);
+      vtPointer:
+        if Params[i].VPointer = nil then
+          {do nothing - intentional skip for reused statements}
+        else if Params[i].VPointer = BIND_NULL then
+          ASqlParam.BindNull
+        else
+          raise Exception.CreateFmt(STypeNotSupported, [Params[i].VType]);
     else
       raise Exception.CreateFmt(STypeNotSupported, [Params[i].VType]);
     end;
   end;
 end;
+
 
 procedure TSQLite3Statement.BindParams(const Params: TArray<string>);
 begin
@@ -991,7 +1040,7 @@ begin
   Result := sqlite3_blob_bytes(FHandle);
 end;
 
-procedure TSqlite3BlobHandler.Read(ByteArray: TBytes; const Offset, Size: integer);
+procedure TSqlite3BlobHandler.Read(var ByteArray: TBytes; const Offset, Size: integer);
 begin
   SetLength(ByteArray, Size);
   FOwnerDatabase.Check(sqlite3_blob_read(FHandle, ByteArray, Size, Offset));
@@ -1074,7 +1123,8 @@ end;
 
 class procedure TSqlite3.AdfResultText(Context: PSQLite3Context; Result: string);
 begin
-  sqlite3_result_text(Context, PByte(Utf8Encode(Result)), SQL_NTS, nil);
+  var UResult := Utf8Encode(Result);
+  sqlite3_result_text(Context, PByte(UResult), Length(UResult), nil);
 end;
 
 class procedure TSqlite3.AdfResultInt(Context: PSQLite3Context; Result: integer);

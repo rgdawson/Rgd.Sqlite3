@@ -38,6 +38,7 @@ uses
 const
   {Memory Database Name...}
   MEMORY = ':memory:';
+  BIND_NULL: Pointer = Pointer(1);
 
   {Return Values...}
   SQLITE_OK    = 0;
@@ -379,8 +380,7 @@ const
   SQLITE_TRANSIENT = Pointer(-1);
   SQLITE_UTF8 = $00000001;
   SQLITE_DETERMINISTIC = $00000800;
-  BIND_NULL: Pointer = Pointer(1);
-
+  
 type
   PUtf8           = PAnsiChar;
   PPByte          = ^PByte;
@@ -690,7 +690,6 @@ begin
   end;
   TempDB.Close;
 end;
-
 
 procedure TSqlite3Database.Close;
 begin
@@ -1124,7 +1123,7 @@ end;
 class procedure TSqlite3.AdfResultText(Context: PSQLite3Context; Result: string);
 begin
   var UResult := Utf8Encode(Result);
-  sqlite3_result_text(Context, PByte(UResult), Length(UResult), nil);
+  sqlite3_result_text(Context, PByte(UResult), Length(UResult), TSQLite3DestructorType(SQLITE_TRANSIENT));
 end;
 
 class procedure TSqlite3.AdfResultInt(Context: PSQLite3Context; Result: integer);

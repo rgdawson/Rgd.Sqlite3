@@ -1,12 +1,8 @@
 # Rgd.Sqlite3
 Rgd.SQLite3 for Delphi - A light-weight, simple, effective Sqlite3 interface unit
 
-Can use sqlite3.dll or the Windows component version WinSqlite3.dll'
-
-For encryption, use Rgd.Sqlite3FDE.pas to statically link the FireDAC Encryption version 
-of Sqlite and access FireDAC encrypted databases.  The FireDAC version for encryption is old
-and that encryption method is deprecated/removed from current Sqlite.  If you need encryption look
-at "Sqlite3 Multiple Ciphers" (from github.com/utelle/SQLite3MultipleCiphers/) for new development.
+Can use sqlite3.dll or winsqlite3.dll (part of Windows 10+).  If you need encryption look at "Sqlite3 Multiple Ciphers" 
+(from github.com/utelle/SQLite3MultipleCiphers/).
 
 Credits:
 
@@ -16,9 +12,20 @@ Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonymous met
 for which I got by reading "Coding in Delphi" by Nick Hodges, plus some flexible goodies for
 binding and fetching data, and performing transactions.
 
-Query Patterns: (I tend to use Pattern 2, but I know some hate 'with' statements, so I have provided alternatives.)
+Query Patterns: (Take your pick, I tend to use Pattern 1, but I know some hate 'with' statements, so I have provided alternatives.)
 
-    {Example Pattern 1 - Stmt := DB.Prepare() and while Stmt.Step...}
+    {Pattern 1 - with DB.Prepare and Fetch(procedure)...}
+    with DB.Prepare(
+      'SELECT Name,' +
+      '       ID' +
+      '  FROM Tasks') do Fetch(procedure
+    begin
+      S0 := SqlColumn[0].AsText;
+      ID := SqlColumn[1].AsInt;
+      {...}
+    end);
+
+    {Pattern 2 - Stmt := DB.Prepare() and while Stmt.Step...}
     var
       Stmt: ISqlite3Statement;
     begin
@@ -33,17 +40,6 @@ Query Patterns: (I tend to use Pattern 2, but I know some hate 'with' statements
         {...}
       end;
     end;
-
-    {Pattern 2 - with DB.Prepare and Fetch(procedure)...}
-    with DB.Prepare(
-      'SELECT Name,' +
-      '       ID' +
-      '  FROM Tasks') do Fetch(procedure
-    begin
-      S0 := SqlColumn[0].AsText;
-      ID := SqlColumn[1].AsInt;
-      {...}
-    end);
 
     {Pattern 3 - DB.Fetch(SQL, procedure(const Stmt: ISQlite3Statement)...}
     DB.Fetch(
@@ -118,7 +114,7 @@ Example: inserting records from a CSV file...
 
 Example: Application-Defined Function
 
-    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl; 
+    procedure SqlAdf_SizeCategory(Context: Pointer; n: integer; args: PPSQLite3ValueArray); cdecl; {or stdcall if WinSqlite3.ddd} 
     var
       Count: integer;
       Result: string;

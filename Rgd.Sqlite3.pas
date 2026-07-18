@@ -2,12 +2,12 @@
 
 Interface
 
-{--------------------------------------------------------------------------------------------------}
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 { This unit supports:                                                                              }
 {   Sqlite3.dll    (Precompiled or otherwise)                                                      }
 {   WinSqlite3.dll (Windows core component since Windows 10)                                       }
 {                                                                                                  }
-{ Define SQLITE_WIN in order to link to the Windows component WinSqlite3.dll                       }
+{ $Define SQLITE_WIN in order to link to the Windows component WinSqlite3.dll                      }
 { WinSqlite3.dll has been a Windows core component since Windows 10.                               }
 {   - Located in Windows\System32                                                                  }
 {   - In January 2026, Windows 11 updated WinSqlite3.dll from v3.43.2 to v3.51.1.                  }
@@ -16,7 +16,7 @@ Interface
 {     - DOES NOT include: ENABLE_MATH_FUNCTIONS, ENABLE_PERCENTILE, LOCALTIME, CARRYA              }
 {     - DOES include: FTS3_PARENTHESIS, FTS4, RBU, STAT4, API_ARMOR                                }
 {                                                                                                  }
-{--------------------------------------------------------------------------------------------------}
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
 {$REGION ' Uses '}
 
@@ -25,20 +25,19 @@ uses
   System.Types,
   System.Classes,
   System.SysUtils,
-  System.SyncObjs,
-  {$IFNDEF CONSOLE}
-  Vcl.Dialogs, Vcl.Forms,
-  {$ENDIF}
-  System.StrUtils;
+  System.StrUtils,
+  System.Math;
 
 {$ENDREGION}
 
 {$REGION ' Sqlite3 DLL Constants and Types '}
 
 const
-  {Memory Database Name...}
-  MEMORY = ':memory:';
+  {MEMORY_DB Database Name...}
+  MEMORY_DB = ':memory:';
   BIND_NULL: Pointer = Pointer(1);
+  DEFAULT_BUSY_TIMEOUT_MS = 5000;  {Applied in Open(); 0 = fail immediately on SQLITE_BUSY}
+
 
   {Return Values...}
   SQLITE_OK    = 0;
@@ -93,14 +92,16 @@ type
   ISqlite3Statement   = interface;
   ISqlite3BlobHandler = interface;
 
- {Column, Parameter Accessors...}
-
- {TSqlParam and TSqlColumn are not intended to be declared as variables. These are return values
-  for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.}
+  {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+  { Column, Parameter Accessors...                                                                      }
+  {   TSqlParam, TSqlColumn are not intended to be declared as variables. These are return values       }
+  {   for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.   }
+  {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
     FParamIndex: integer;
+    procedure BindCurrency(const Value: Currency);
     procedure BindDouble(const Value: Double);
     procedure BindInt(const Value: integer);
     procedure BindInt64(const Value: Int64);
@@ -114,6 +115,7 @@ type
     [unsafe] FStmt: ISqlite3Statement;
     FColumnIndex : integer;
     function AsBool   : Boolean;
+    function AsCurrency: Currency;
     function AsDouble : Double;
     function AsInt    : integer;
     function AsInt64  : Int64;
@@ -128,7 +130,7 @@ type
   {Sqlite Interface Definitions...}
 
   ISqlite3Database = interface
-    ['{E6409C03-0409-46D3-99A6-7FCF27D72DF4}']
+    ['{B00ADF59-4BB9-4331-8888-E416F0F4121B}']
   {Getters...}
     function GetHandle: PSqlite3;
     function GetFilename: string;
@@ -136,6 +138,8 @@ type
   {Error Checking...}
     function Check(const ErrCode: integer): integer;
     procedure CheckHandle;
+  {Busy handling...}
+    procedure SetBusyTimeout(const Ms: integer);
   {Open/Close...}
     procedure Open(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT);
     procedure OpenIntoMemory(const Filename: string );
@@ -144,17 +148,24 @@ type
   {Prepare...}
     function Prepare(const SQL: string): ISqlite3Statement; overload;
     function Prepare(const SQL: string; const FmtParams: array of const): ISqlite3Statement; overload;
+      deprecated 'Prefer PrepareFmt() to make Format-based SQL explicit; never use with untrusted input';
     function PrepareFmt(const SQL: string; const FmtParams: array of const): ISqlite3Statement;
+      deprecated 'CAUTION: Format-based SQL is injection-prone with untrusted input; use BindParams for user data';
   {Execute...}
     procedure Execute(const SQL: string); overload;
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
+      deprecated 'Prefer ExecuteFmt() to make Format-based SQL explicit; never use with untrusted input';
     procedure ExecuteFmt(const SQL: string; const FmtParams: array of const);
+      deprecated 'CAUTION: Format-based SQL is injection-prone with untrusted input; use BindParams for user data';
     function LastInsertRowID: Int64;
-  {FetchCount...}
-    function BindAndFetchCount(const Params: array of const; const SQL: string): integer;
-    function FetchCount(const SQL: string): integer; overload;
-    function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
-    function FetchCountFmt(const SQL: string; const FmtParams: array of const): integer;
+    function RowsAffected: Int64;  {Rows changed by the most recent INSERT/UPDATE/DELETE}
+  {FetchScalar...}
+    function BindAndFetchScalar(const Params: array of const; const SQL: string): integer;
+    function FetchScalar(const SQL: string): integer; overload;
+    function FetchScalar(const SQL: string; const FmtParams: array of const): integer; overload;
+      deprecated 'Prefer FetchScalarFmt() to make Format-based SQL explicit; never use with untrusted input';
+    function FetchScalarFmt(const SQL: string; const FmtParams: array of const): integer;
+      deprecated 'CAUTION: Format-based SQL is injection-prone with untrusted input; use BindParams for user data';
   {Blobs...}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean = True): ISqlite3BlobHandler;
   {Transactions...}
@@ -162,8 +173,8 @@ type
     procedure Commit;
     procedure Rollback;
     procedure Transaction(const Proc: TProc); overload;
-  {Application-Defined Functons...}
-    procedure AdfCreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction);
+  {Application-Defined Functions...}
+    procedure AdfCreateFunction(Name: string; nArg: integer; xFunc: TSQLite3RegularFunction; Deterministic: Boolean = True; DirectOnly: Boolean = True);
   {Properties...}
     property TransactionOpen: Boolean read GetTransactionOpen;
     property Handle: PSqlite3 read GetHandle;
@@ -172,7 +183,7 @@ type
   end;
 
   ISqlite3Statement = interface
-    ['{71D449C7-29BF-4C00-983E-52CFF11DB2B7}']
+    ['{42424B80-5883-4385-9DEE-28D38175EC0E}']
   {Getters...}
     function GetHandle: PSqlite3Stmt;
     function GetOwnerDatabase: ISqlite3Database;
@@ -189,8 +200,10 @@ type
     function  StepAndReset: integer;
   {Fetching, Updating...}
     procedure Reset;
-    procedure Fetch(const StepProc: TProc);
-    procedure BindAndFetch(const Params: array of const; const StepProc: TProc);
+    procedure Fetch(const FetchProc: TProc); overload;
+    procedure Fetch(const FetchFunc: TFunc<Boolean>); overload; {Allows Exit, set result := False}
+    procedure BindAndFetch(const Params: array of const; const StepProc: TProc); overload;
+    procedure BindAndFetch(const Params: array of const; const FetchFunc: TFunc<Boolean>); overload; {Allows Exit, set result := False}
     function  SqlColumnCount: integer;
   {Properties...}
     property Handle: PSqlite3Stmt read GetHandle;
@@ -200,8 +213,16 @@ type
     property SqlColumn[const ColumnIndex: integer]: TSqlColumn read GetSqlColumn;
   end;
 
+  {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+  { FYI: ISqliteBlobHandler is for very large BLOBs where you want to be read/write directly            }
+  {      or incrementally. I have never used it, as I have not dealt with very large BLOBs.             }
+  {      To get a Blob Handler, you use the DB.BlobOpen method, but you need to know RowID,             }
+  {      so, you cannot use this on tables that are defined WITHOUT ROWID. It is more common            }
+  {      for me use regular TSqlParam.BindBlob() and TSqlColumn.AsBlob methods to set/get BLOBs.        }
+  {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
   ISqlite3BlobHandler = interface
-    ['{4C92524F-F899-4095-9127-0DD50927D0C0}']
+    ['{A468928C-CBA1-41E4-9BEE-DCD45FD817E6}']
   {Getters...}
     function GetHandle: PSqlite3Blob;
     function GetOwnerDatabase: ISqlite3Database;
@@ -228,6 +249,8 @@ type
   {Error Checking...}
     function Check(const ErrCode: integer): integer;
     procedure CheckHandle;
+  {Busy handling...}
+    procedure SetBusyTimeout(const Ms: integer);
   {Open/Close...}
     procedure Open(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT);
     procedure OpenIntoMemory(const Filename: string);
@@ -242,11 +265,12 @@ type
     procedure Execute(const SQL: string; const FmtParams: array of const); overload;
     procedure ExecuteFmt(const SQL: string; const FmtParams: array of const);
     function LastInsertRowID: Int64;
-  {FetchCount...}
-    function BindAndFetchCount(const Params: array of const; const SQL: string): integer;
-    function FetchCount(const SQL: string): integer; overload;
-    function FetchCount(const SQL: string; const FmtParams: array of const): integer; overload;
-    function FetchCountFmt(const SQL: string; const FmtParams: array of const): integer;
+    function RowsAffected: Int64;  {Rows changed by the most recent INSERT/UPDATE/DELETE}
+  {FetchScalar...}
+    function BindAndFetchScalar(const Params: array of const; const SQL: string): integer;
+    function FetchScalar(const SQL: string): integer; overload;
+    function FetchScalar(const SQL: string; const FmtParams: array of const): integer; overload;
+    function FetchScalarFmt(const SQL: string; const FmtParams: array of const): integer;
   {Blobs}
     function BlobOpen(const Table, Column: string; const RowID: Int64; const WriteAccess: Boolean): ISqlite3BlobHandler;
   {Transactions...}
@@ -254,8 +278,8 @@ type
     procedure Commit;
     procedure Rollback;
     procedure Transaction(const Proc: TProc); overload;
-  {Application-Defined Functons...}
-    procedure AdfCreateFunction(Name: string; ArgCount: integer; xFunc: TSQLite3RegularFunction);
+  {Application-Defined Functions...}
+    procedure AdfCreateFunction(Name: string; ArgCount: integer; xFunc: TSQLite3RegularFunction; Deterministic: Boolean = True; DirectOnly: Boolean = True);
   {Properties...}
     property Handle: PSqlite3 read GetHandle;
   public
@@ -284,8 +308,10 @@ type
     function  StepAndReset: integer;
   {Fetching, Updating}
     procedure Reset;
-    procedure Fetch(const FetchProc: TProc);
-    procedure BindAndFetch(const Params: array of const; const StepProc: TProc);
+    procedure Fetch(const FetchProc: TProc); overload;
+    procedure Fetch(const FetchFunc: TFunc<Boolean>); overload;
+    procedure BindAndFetch(const Params: array of const; const StepProc: TProc); overload;
+    procedure BindAndFetch(const Params: array of const; const FetchFunc: TFunc<Boolean>); overload;
     function SqlColumnCount: integer;
   public
     constructor Create(OwnerDatabase: ISqlite3Database; const SQL: string);
@@ -293,13 +319,6 @@ type
   end;
 
   TSqlite3BlobHandler = class(TInterfacedObject, ISqlite3BlobHandler)
-    {--------------------------------------------------------------------------------------------------}
-    { ISqliteBlobHandler is for very large BLOBs where you want to be read/write directly              }
-    { and/or incrementally. I have never used it, as I have not dealt with very large BLOBs.           }
-    { To get a Blob Handler, you use the DB.BlobOpen method, but you need to know RowID,               }
-    { so, you cannot use this on tables that are defined WITHOUT ROWID. It is more common to           }
-    { use regular TSqlParam.BindBlob() and TSqlColumn.AsBlob methods to set/get smaller BLOBs.         }
-    {--------------------------------------------------------------------------------------------------}
   private
     FHandle: PSqlite3Blob;
     FOwnerDatabase: ISqlite3Database;
@@ -315,18 +334,20 @@ type
     destructor Destroy; override;
   end;
 
+  {General Global Sqlite Object/methods...}
   TSqlite3 = class
   private
     class var FSqliteVersion: string;
   public
   {General class functions...}
+    class function CheckVersion: Boolean;
     class function ThreadSafe: Boolean;
     class function LibPath: string;
     class function VersionStr: string;
     class function CompileOptions: string;
     class function OpenDatabase(const Filename: string; OpenFlags: integer = SQLITE_OPEN_DEFAULT): ISqlite3Database;
     class function OpenDatabaseIntoMemory(const Filename: string): ISqlite3Database;
-  {Application Defined function helpers Adf* ...}
+  {Application Defined function helpers...}
     class function AdfValueText(Value: PSqlite3Value): string;
     class function AdfValueInt(Value: PSqlite3Value): integer;
     class function AdfValueInt64(Value: PSqlite3Value): Int64;
@@ -338,36 +359,66 @@ type
   end;
 
 var
-  DB: ISqlite3Database;
+  DB: ISqlite3Database;  //convenience global for the common single-database desktop app; ignore it if you manage your own instances
 
 Implementation
-
-uses
-  System.Math;
 
 {$REGION ' Local Utility '}
 
 type
   TSqlVersion = array [0..3] of integer;
 
-function ParseVersionStr(VerStr: string): TSqlVersion;
+function CompareVersions(const S1, S2: string): Integer;
+
+  function _ParseVersionStr(const VerStr: string): TArray<Integer>;
+  begin
+    var StrArray := SplitString(VerStr.Trim, '.');
+    SetLength(Result, Length(StrArray));
+    for var i := 0 to High(StrArray) do
+      if not TryStrToInt(StrArray[i].Trim, Result[i]) then
+        Result[i] := 0;  // or raise a descriptive exception, per your needs
+  end;
+
+  function _Part(const A: TArray<Integer>; Index: Integer): Integer;
+  begin
+    if Index <= High(A) then
+      Result := A[Index]
+    else
+      Result := 0;
+  end;
+
 begin
-  Result := Default(TSqlVersion);
-  var StrArray := SplitString(VerStr, '.');
-  for var i := 0 to High(StrArray) do
-    Result[i] := StrArray[i].ToInteger;
+  var Version1 := _ParseVersionStr(S1);
+  var Version2 := _ParseVersionStr(S2);
+  Result := 0;
+  for var i := 0 to Max(High(Version1), High(Version2)) do
+  begin
+    Result := CompareValue(_Part(Version1, i), _Part(Version2, i));
+    if Result <> 0 then
+      Exit;
+  end;
 end;
 
-function CompareVersions(const S1, S2: string): TValueRelationship;
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+{ Type conventions                                                                                            }
+{   PUtf8Char  (System) - UTF-8 encoded C strings crossing the DLL boundary (SQL, names, text values)         }
+{   UTF8String (System) - holds the encoded text on the Delphi side, keeping it alive across the call         }
+{   Pointer             - raw, untyped BLOB bytes only                                                        }
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+{ The helpers Utf8Ptr() and Utf8ToStr() in the Local Utility region centralize all conversions,               }
+{ so call sites read naturally and contain no casts.                                                          }
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+function Utf8Ptr(const S: UTF8String): PUtf8Char; inline; overload;
 begin
-  var V1 := ParseVersionStr(S1);
-  var V2 := ParseVersionStr(S2);
-  for var i := 0 to 3 do
-  begin
-    Result := CompareValue(V1[i], V2[i]);
-    if Result <> 0 then
-      break;
-  end;
+  {The PAnsiChar cast guarantees a non-nil result: an empty string yields a pointer to #0.
+   This matters because sqlite3 treats a nil text pointer as NULL rather than ''...}
+  Result := PUtf8Char(PAnsiChar(S));
+end;
+
+function Utf8ToStr(P: PUtf8Char): string; inline;
+begin
+  Result := if (P = nil) then '' else UTF8ToString(PAnsiChar(P));
 end;
 
 {$ENDREGION}
@@ -378,61 +429,59 @@ const
   SQL_NTS = -1;
   SQLITE_STATIC    = Pointer(0);
   SQLITE_TRANSIENT = Pointer(-1);
-  SQLITE_UTF8 = $00000001;
-  SQLITE_DETERMINISTIC = $00000800;
-  
+
 type
-  PUtf8           = PAnsiChar;
-  PPByte          = ^PByte;
+  {PUtf8Char (System) is used for all UTF-8 encoded C strings crossing the DLL boundary...}
+  PPUtf8Char      = ^PUtf8Char;
   PSqliteBackup   = Pointer;
-  TPAnsiCharArray = array[0..MaxInt div SizeOf(PAnsiChar) - 1] of PAnsiChar;
-  PPAnsiCharArray = ^TPAnsiCharArray;
-  TSqliteCallback           = function(pArg: Pointer; nCol: Integer; argv: PPAnsiCharArray; colv: PPAnsiCharArray): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
+  TPUtf8CharArray = array[0..MaxInt div SizeOf(PUtf8Char) - 1] of PUtf8Char;
+  PPUtf8CharArray = ^TPUtf8CharArray;
+  TSqliteCallback           = function(pArg: Pointer; nCol: Integer; argv: PPUtf8CharArray; colv: PPUtf8CharArray): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
   TSqlite3_Destroy_Callback = procedure(p: Pointer); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
   TSQLite3AggregateStep     = procedure(ctx: PSQLite3Context; n: Integer; apVal: PPSQLite3ValueArray); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
   TSQLite3AggregateFinalize = procedure(ctx: PSQLite3Context); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
   TSQLite3DestructorType    = procedure(p: Pointer); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
 
-{--------------------------------------------------------------------------------------------------}
-{   This is the subset of sqlite3 function definitions required to support this unit.              }
-{                                                                                                  }
-{   I mimic these prototypes as defined in the FireDAC.Phys.SQLiteWrapper.Stat for consistency.    }
-{   FireDac likes to use PByte for text, so some additional typecasting is needed below.           }
-{   FireDAC param types:                                                                           }
-{     PByte (System.Types) = System.Byte = ^Byte                                                   }
-{     PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar                                  }
-{     PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar                                                  }
-{--------------------------------------------------------------------------------------------------}
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+{ This is the subset of sqlite3 function definitions required to support this unit.                   }
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
-const SQLITE3_DLL = {$IFDEF SQLITE_WIN}'WinSqlite3.dll'{$ELSE}'Sqlite3.dll'{$ENDIF};
+const
+  SQLITE3_DLL = {$IFDEF SQLITE_WIN}'WinSqlite3.dll'{$ELSE}'Sqlite3.dll'{$ENDIF};
+  MinVersion  = '3.42.0';
+  MainSchema: UTF8String = 'main';  {Default schema name passed to the backup/blob APIs}
 
-function sqlite3_config(Option: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+
 function sqlite3_initialize: integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_libversion: PAnsiChar; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_errcode(DB: PSqlite3): Integer; stdcall; external SQLITE3_DLL;
-function sqlite3_errmsg(DB: PSqlite3): PAnsiChar; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_libversion: PUtf8Char; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_errmsg(DB: PSqlite3): PUtf8Char; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_errcode(DB: PSqlite3): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+
 function sqlite3_threadsafe: integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
-function sqlite3_open_v2(FileName: PUtf8; out ppDb: PSqlite3; Flags: integer; zVfs: PAnsiChar): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_open_v2(FileName: PUtf8Char; out ppDb: PSqlite3; Flags: integer; zVfs: PUtf8Char): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_close_v2(DB: PSqlite3): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_backup_init(pDest: PSqlite3; zDestName: PByte; pSource: PSqlite3; zSourceName: PByte): PSqliteBackup; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_backup_init(pDest: PSqlite3; zDestName: PUtf8Char; pSource: PSqlite3; zSourceName: PUtf8Char): PSqliteBackup; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_backup_step(p: PSqliteBackup; nPage: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_backup_finish(p: PSqliteBackup): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
-function sqlite3_exec(DB: PSqlite3; SQL: PByte; callback: TSqliteCallback; pArg: Pointer; errmsg: PPAnsiChar): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_prepare_v2(DB: PSQLite3; zSql: PByte; nByte: Integer; out ppStmt: PSQLite3Stmt; var pzTail: PByte): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_exec(DB: PSqlite3; SQL: PUtf8Char; callback: TSqliteCallback; pArg: Pointer; errmsg: PPUtf8Char): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_prepare_v2(DB: PSQLite3; zSql: PUtf8Char; nByte: Integer; out ppStmt: PSQLite3Stmt; var pzTail: PUtf8Char): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_finalize(pStmt: PSqlite3Stmt): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_reset(pStmt: PSqlite3Stmt): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_last_insert_rowid(DB: PSqlite3): Int64; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
+function sqlite3_busy_timeout(DB: PSqlite3; ms: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_changes64(DB: PSqlite3): Int64; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+
 function sqlite3_bind_parameter_count(pStmt: PSqlite3Stmt): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_bind_parameter_index(pStmt: PSqlite3Stmt; zName: PAnsiChar): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_bind_parameter_index(pStmt: PSqlite3Stmt; zName: PUtf8Char): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_bind_blob(pStmt: PSqlite3Stmt; i: integer; zData: Pointer; n: integer; xDel: TSqlite3_Destroy_Callback): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_bind_double(pStmt: PSqlite3Stmt; i: integer; rValue: Double): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_bind_int(pStmt: PSqlite3Stmt; i: integer; iValue: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_bind_int64(pStmt: PSqlite3Stmt; i: integer; iValue: Int64): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_bind_null(pStmt: PSqlite3Stmt; i: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_bind_text(pStmt: PSqlite3Stmt; i: integer; zData: PByte; n: integer; xDel: TSqlite3_Destroy_Callback): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_bind_text(pStmt: PSqlite3Stmt; i: integer; zData: PUtf8Char; n: integer; xDel: TSqlite3_Destroy_Callback): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_bind_zeroblob(pStmt: PSqlite3Stmt; i: integer; n: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
 function sqlite3_clear_bindings(pStmt: PSqlite3Stmt): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
@@ -442,29 +491,27 @@ function sqlite3_column_blob(pStmt: PSqlite3Stmt; iCol: integer): Pointer; {$IFD
 function sqlite3_column_double(pStmt: PSqlite3Stmt; iCol: integer): Double; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_column_int(pStmt: PSqlite3Stmt; iCol: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_column_int64(pStmt: PSqlite3Stmt; iCol: integer): Int64; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_column_text(pStmt: PSqlite3Stmt; iCol: integer): PByte; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_column_text(pStmt: PSqlite3Stmt; iCol: integer): PUtf8Char; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_column_bytes(pStmt: PSqlite3Stmt; iCol: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_column_type(pStmt: PSqlite3Stmt; iCol: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_column_count(pStmt: PSqlite3Stmt): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_column_name(pStmt: PSqlite3Stmt; n: integer): PAnsiChar; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_column_name(pStmt: PSqlite3Stmt; n: integer): PUtf8Char; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
 function sqlite3_blob_bytes(pBlob: PSqlite3Blob): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_blob_open(DB: PSqlite3; zDb: PAnsiChar; zTable: PAnsiChar; zColumn: PAnsiChar; iRow: Int64; Flags: integer; var ppBlob: PSqlite3Blob): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_blob_open(DB: PSqlite3; zDb: PUtf8Char; zTable: PUtf8Char; zColumn: PUtf8Char; iRow: Int64; Flags: integer; var ppBlob: PSqlite3Blob): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_blob_close(pBlob: PSqlite3Blob): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_blob_read(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_blob_write(pBlob: PSqlite3Blob; Z: Pointer; n: integer; iOffset: integer): integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
-function sqlite3_create_function(db: PSQLite3; const zFunctionName: PByte; nArg: Integer; eTextRep: Integer; pApp: Pointer; xFunc: TSQLite3RegularFunction; xStep: TSQLite3AggregateStep; xFinal: TSQLite3AggregateFinalize): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_create_function(db: PSQLite3; const zFunctionName: PUtf8Char; nArg: Integer; eTextRep: Integer; pApp: Pointer; xFunc: TSQLite3RegularFunction; xStep: TSQLite3AggregateStep; xFinal: TSQLite3AggregateFinalize): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_value_int(pVal: PSQLite3Value): Integer; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_value_int64(pVal: PSQLite3Value): Int64; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 function sqlite3_value_double(pVal: PSQLite3Value): Double; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-function sqlite3_value_text(pVal: PSQLite3Value): PByte; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
+function sqlite3_value_text(pVal: PSQLite3Value): PUtf8Char; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 procedure sqlite3_result_int(pCtx: PSQLite3Context; iVal: Integer); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 procedure sqlite3_result_int64(pCtx: PSQLite3Context; iVal: Int64); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 procedure sqlite3_result_double(pCtx: PSQLite3Context; rVal: Double); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-procedure sqlite3_result_text(pCtx: PSQLite3Context; const z: PByte; n: Integer; xDel: TSQLite3DestructorType); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
-
-procedure sqlite3_shutdown; {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};  external SQLITE3_DLL;
+procedure sqlite3_result_text(pCtx: PSQLite3Context; const z: PUtf8Char; n: Integer; xDel: TSQLite3DestructorType); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; external SQLITE3_DLL;
 
 {$ENDREGION}
 
@@ -477,7 +524,9 @@ const
   SNoTransactionOpen      = 'No transaction is open';
   SParamCountMismatch     = 'Parameter Count Mismatch in BindParams';
   STypeNotSupported       = 'VType %d not supported in BindParams()';
-  SImproperSQL            = 'Incorrect SQL for this function, must be SELECT COUNT()';
+  STrailingSQL            = 'SQL contains more than one statement; Prepare only compiles the first';
+  SNoRows                 = 'FetchScalar: query returned no rows';
+  SBackupDeleteFailed     = 'Backup: could not delete existing file %s';
 
 constructor ESqliteError.Create(Msg: string; ErrorCode: integer);
 begin
@@ -488,6 +537,13 @@ end;
 {$ENDREGION}
 
 {$REGION ' TSqlParam '}
+
+procedure TSqlParam.BindCurrency(const Value: Currency);
+begin
+  {Remark: This library treats currency according to the Delphi convention, which is
+           an Int64 scaled by 10000, so the convention is Currency columns hold value*10000}
+  FStmt.OwnerDatabase.Check(sqlite3_bind_int64(FStmt.Handle, FParamIndex, PInt64(@Value)^));
+end;
 
 procedure TSqlParam.BindDouble(const Value: Double);
 begin
@@ -505,15 +561,10 @@ begin
 end;
 
 procedure TSqlParam.BindText(const Value: string);
-var
-  Utf8: UTF8String;
 begin
-  Utf8 := Utf8Encode(Value);
-  if Utf8 = '' then
-    {Empty string: nil pointer would bind NULL, so pass a non-nil pointer to #0 with length 0...}
-    FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(PAnsiChar('')), 0, SQLITE_STATIC))
-  else
-    FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, PByte(Utf8), Length(Utf8), SQLITE_TRANSIENT));
+  var UValue: UTF8String := Utf8Encode(Value);
+  {Utf8Ptr never returns nil, so an empty string binds as '' (non-nil pointer, length 0) rather than NULL...}
+  FStmt.OwnerDatabase.Check(sqlite3_bind_text(FStmt.Handle, FParamIndex, Utf8Ptr(UValue), Length(UValue), SQLITE_TRANSIENT));
 end;
 
 procedure TSqlParam.BindNull;
@@ -543,6 +594,15 @@ begin
   Result := sqlite3_column_int(FStmt.Handle, FColumnIndex) <> 0;
 end;
 
+function TSqlColumn.AsCurrency: Currency;
+begin
+  {Remark: This library treats currency according to the Delphi convention, which is
+           an Int64 scaled by 10000, so the convention is Currency columns hold value*10000}
+
+  {Scaled-Int64 convention: reinterpret the raw value...}
+  PInt64(@Result)^ := sqlite3_column_int64(FStmt.Handle, FColumnIndex);
+end;
+
 function TSqlColumn.ColBytes: Integer;
 begin
   Result := sqlite3_column_bytes(FStmt.Handle, FColumnIndex);
@@ -565,7 +625,7 @@ end;
 
 function TSqlColumn.AsText: string;
 begin
-  Result := Utf8ToString(PUtf8(sqlite3_column_text(FStmt.Handle, FColumnIndex)));
+  Result := Utf8ToStr(sqlite3_column_text(FStmt.Handle, FColumnIndex));
 end;
 
 function TSqlColumn.AsBlob: TBytes;
@@ -584,7 +644,7 @@ end;
 
 function TSqlColumn.ColName: string;
 begin
-  Result := Utf8ToString(PUtf8(sqlite3_column_name(FStmt.Handle, FColumnIndex)));
+  Result := Utf8ToStr(sqlite3_column_name(FStmt.Handle, FColumnIndex));
 end;
 
 function TSqlColumn.ColType: integer;
@@ -603,6 +663,9 @@ end;
 
 constructor TSqlite3Database.Create;
 begin
+  if not TSqlite3.CheckVersion then
+    raise Exception.Create(Format('Sqlite3.dll Version %s or greater required. ', [MinVersion]));
+
   sqlite3_initialize;
 end;
 
@@ -614,10 +677,11 @@ end;
 
 function TSqlite3Database.Check(const ErrCode: integer): integer;
 begin
-  if ErrCode in [SQLITE_OK, SQLITE_ROW, SQLITE_DONE] then
-    Result := ErrCode
+  case ErrCode of
+    SQLITE_OK, SQLITE_ROW, SQLITE_DONE: Result := ErrCode
   else
-    raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, Utf8ToString(PAnsiChar(sqlite3_errmsg(FHandle)))]), ErrCode);
+    raise ESqliteError.Create(Format(SErrorMessage, [ErrCode, Utf8ToStr(sqlite3_errmsg(FHandle))]), ErrCode);
+  end;
 end;
 
 procedure TSqlite3Database.CheckHandle;
@@ -641,19 +705,37 @@ begin
   Result := FTransactionOpen;
 end;
 
+procedure TSqlite3Database.SetBusyTimeout(const Ms: integer);
+begin
+  {Ms = 0 disables retry: SQLITE_BUSY raises immediately (pre-addition behavior)}
+  CheckHandle;
+  Check(sqlite3_busy_timeout(FHandle, Ms));
+end;
+
 procedure TSqlite3Database.Open(const Filename: string; OpenFlags: integer);
 begin
   Close;
   FFilename := Filename;
 
   {Open database...}
-  Check(sqlite3_open_v2(PUtf8(Utf8Encode(FFilename)), FHandle, OpenFlags, nil));
+  try
+    Check(sqlite3_open_v2(Utf8Ptr(Utf8Encode(FFilename)), FHandle, OpenFlags, nil));
 
-  {Always enable foreign keys...}
-  Execute('pragma foreign_keys = on');
+    {Always enable foreign keys...}
+    Execute('pragma foreign_keys = on');
 
-  if Filename = MEMORY then
-    Execute('pragma synchronous=off');
+    {Default busy timeout so transient locks (2nd instance, backup agent, antivirus)
+     retry for a few seconds instead of raising SQLITE_BUSY immediately...}
+    SetBusyTimeout(DEFAULT_BUSY_TIMEOUT_MS);
+  except
+    if Assigned(FHandle) then
+    begin
+      sqlite3_close_v2(FHandle);
+      FHandle := nil;
+    end;
+    FFilename := '';
+    raise;
+  end;
 end;
 
 procedure TSqlite3Database.OpenIntoMemory(const Filename: string);
@@ -667,14 +749,14 @@ begin
   TempDB := TSqlite3Database.Create;
   TempDB.Open(Filename, SQLITE_OPEN_READONLY);
 
-  Open(MEMORY, SQLITE_OPEN_DEFAULT);
+  Open(MEMORY_DB, SQLITE_OPEN_DEFAULT);
   FFilename := Filename;
   try
-    Backup := sqlite3_backup_init(Self.Handle, PByte(PAnsiChar('main')), TempDB.Handle, PByte(PAnsiChar('main')));
+    Backup := sqlite3_backup_init(Self.Handle, Utf8Ptr(MainSchema), TempDB.Handle, Utf8Ptr(MainSchema));
     if Backup = nil then
       {backup_init reports its error on the DESTINATION handle...}
       raise ESqliteError.Create(
-        Format(SErrorMessage, [sqlite3_errcode(Handle), Utf8ToString(sqlite3_errmsg(Handle))]), sqlite3_errcode(Handle));
+        Format(SErrorMessage, [sqlite3_errcode(Handle), Utf8ToStr(sqlite3_errmsg(Handle))]), sqlite3_errcode(Handle));
     try
       sqlite3_backup_step(Backup, -1);
     finally
@@ -684,7 +766,7 @@ begin
     end;
     Check(Rc);
   except
-    {Don't leave a half-populated :memory: database behind...}
+    {Don't leave a half-populated :MEMORY_DB: database behind...}
     Close;
     raise;
   end;
@@ -695,12 +777,11 @@ procedure TSqlite3Database.Close;
 begin
   if Assigned(FHandle) then
   begin
-    {Rollback if transaction left open (Sqlite should do this automatically, but we are doing it explcitly anyway)...}
+    {Rollback if transaction left open (Sqlite should do this automatically, but we are doing it explicitly anyway)...}
     if FTransactionOpen then
       Rollback;
 
-    {Close Database...}
-    Check(sqlite3_close_v2(Handle));
+    sqlite3_close_v2(Handle);
     FHandle := nil;
     FFilename := '';
   end;
@@ -708,7 +789,10 @@ end;
 
 procedure TSqlite3Database.Backup(const Filename: string);
 begin
-  DeleteFile(Filename);
+  {VACUUM INTO requires that the target not exist; fail loudly if we cannot clear it
+   (e.g. file locked), rather than letting VACUUM INTO fail with a less obvious error...}
+  if FileExists(Filename) and not System.SysUtils.DeleteFile(Filename) then
+    raise ESqliteError.Create(Format(SBackupDeleteFailed, [Filename]), -1);
   ExecuteFmt('VACUUM INTO %s', [QuotedStr(Filename)])
 end;
 
@@ -728,46 +812,41 @@ begin
   Result := Prepare(Format(SQL, FmtParams));
 end;
 
-function TSqlite3Database.FetchCount(const SQL: string; const FmtParams: array of const): integer;
+function TSqlite3Database.BindAndFetchScalar(const Params: array of const; const SQL: string): integer;
 begin
-  Result := FetchCount(Format(SQL, FmtParams));
-end;
-
-function TSqlite3Database.BindAndFetchCount(const Params: array of const; const SQL: string): integer;
-begin
-  if not(ContainsText(SQL, 'SELECT Count(')) then
-    raise Exception.Create(SImproperSQL);
-
   with Prepare(SQL) do
   begin
     BindParams(Params);
-    Step;
+    if Step <> SQLITE_ROW then
+      raise ESqliteError.Create(SNoRows, -1);
     Result := SqlColumn[0].AsInt;
   end;
 end;
 
-function TSqlite3Database.FetchCount(const SQL: string): integer;
+function TSqlite3Database.FetchScalar(const SQL: string): integer;
 begin
-  if not(ContainsText(SQL, 'SELECT Count(')) then
-    raise Exception.Create(SImproperSQL);
-
   with Prepare(SQL) do
   begin
-    Step;
+    if Step <> SQLITE_ROW then
+      raise ESqliteError.Create(SNoRows, -1);
     Result := SqlColumn[0].AsInt;
   end;
 end;
 
-
-function TSqlite3Database.FetchCountFmt(const SQL: string; const FmtParams: array of const): integer;
+function TSqlite3Database.FetchScalar(const SQL: string; const FmtParams: array of const): integer;
 begin
-  Result := FetchCount(Format(SQL, FmtParams));
+  Result := FetchScalar(Format(SQL, FmtParams));
+end;
+
+function TSqlite3Database.FetchScalarFmt(const SQL: string; const FmtParams: array of const): integer;
+begin
+  Result := FetchScalar(Format(SQL, FmtParams));
 end;
 
 procedure TSqlite3Database.Execute(const SQL: string);
 begin
   CheckHandle;
-  Check(sqlite3_exec(Handle, PByte(Utf8Encode(SQL)), nil, nil, nil));
+  Check(sqlite3_exec(Handle, Utf8Ptr(Utf8Encode(SQL)), nil, nil, nil));
 end;
 
 procedure TSqlite3Database.Execute(const SQL: string; const FmtParams: array of const);
@@ -778,6 +857,12 @@ end;
 procedure TSqlite3Database.ExecuteFmt(const SQL: string; const FmtParams: array of const);
 begin
   Execute(Format(SQL, FmtParams));
+end;
+
+function TSqlite3Database.RowsAffected: Int64;
+begin
+  CheckHandle;
+  Result := sqlite3_changes64(FHandle);
 end;
 
 function TSqlite3Database.LastInsertRowID: Int64;
@@ -836,30 +921,37 @@ begin
   end;
 end;
 
-procedure TSqlite3Database.AdfCreateFunction(Name: string; ArgCount: integer; xFunc: TSQLite3RegularFunction);
-{-------------------------------------------------------------------------------------------------------------}
-{   Application Defined Function:                                                                             }
-{                                                                                                             }
-{   Define and Register your application-defined Sqlite function something like the following:                }
-{                                                                                                             }
-{     procedure MyFunction(Context: Pointer; n: integer; Args: PPSQLite3ValueArray); stdcall or cdecl;        }
-{     begin                                                                                                   }
-{       var Arg := TSqlite3.AdfValueText(args[0]); //Get the arument(s)                                       }
-{       var AdfResult := SomeFunction(Arg);                                                                   }
-{       TSqlite3.AdfResultText(Context, AdfResult);                                                           }
-{     end;                                                                                                    }
-{                                                                                                             }
-{     DB.AdfCreateFunction('MyFunction', 1, @MyFunction);                                                     }
-{                                                                                                             }
-{   !! Calling convention must match the Sqlite DLL. For WinSqlite3.dll: sdtcall, otherwise cdecl             }
-{                                                                                                             }
-{   Then, you can use the function in SQL statements                                                          }
-{     SELECT MyFunction(MyField) FROM MyTable;                                                                }
-{                                                                                                             }
-{   You can't define an application-defined function anonmously.                                              }
-{-------------------------------------------------------------------------------------------------------------}
+procedure TSqlite3Database.AdfCreateFunction(Name: string; ArgCount: integer; xFunc: TSQLite3RegularFunction; Deterministic: Boolean = True; DirectOnly: Boolean = True);
+(**************************************************************************************************
+ *  Application Defined Function:
+ *
+ *  Define and Register your application-defined Sqlite function something like the following:
+ *
+ *    procedure MyFunction(Context: Pointer; n: integer; Args: PPSQLite3ValueArray); {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF};
+ *    begin
+ *      var Arg := TSqlite3.AdfValueText(args[0]); {Get the arGument(s)}
+ *      var AdfResult := SomeFunction(Arg);        {}
+ *      TSqlite3.AdfResultText(Context, AdfResult);
+ *    end;
+ *
+ *    The procedure has to match calling convention of sqlite3 dll, which is {$IFDEF SQLITE_WIN}stdcall{$ELSE}cdecl{$ENDIF}; for WinSQlite3.dll.
+ *
+ *    DB.AdfCreateFunction('MyFunction', 1, @MyFunction);
+ *
+ *  After that, you can use the function in SQL statements
+ *    SELECT MyFunction(MyField) FROM MyTable;
+ *
+ *  **You can't define an application-defined function anonymously.
+ *
+ **************************************************************************************************)
+const
+  SQLITE_UTF8          = $00000001;
+  SQLITE_DETERMINISTIC = $00000800;
+  SQLITE_DIRECTONLY    = $00080000;
 begin
-  sqlite3_create_function(Handle, PByte(Utf8Encode(Name)), ArgCount, SQLITE_UTF8 or SQLITE_DETERMINISTIC, nil, @xFunc, nil, nil);
+  var EncodeFlag := if Deterministic then SQLITE_UTF8 or SQLITE_DETERMINISTIC else SQLITE_UTF8;
+  if DirectOnly then EncodeFlag := EncodeFlag or SQLITE_DIRECTONLY;
+  Check(sqlite3_create_function(Handle, Utf8Ptr(Utf8Encode(Name)), ArgCount, EncodeFlag, nil, @xFunc, nil, nil));
 end;
 
 {$ENDREGION}
@@ -870,8 +962,18 @@ constructor TSQLite3Statement.Create(OwnerDatabase: ISqlite3Database; const SQL:
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  var pzTail:PByte := nil;
-  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, PByte(Utf8Encode(SQL)), SQL_NTS, FHandle, pzTail));
+  var pzTail: PUtf8Char := nil;
+  var USQL: UTF8String := Utf8Encode(SQL);
+  FOwnerDatabase.Check(sqlite3_prepare_v2(FOwnerDatabase.Handle, Utf8Ptr(USQL), Length(USQL), FHandle, pzTail));
+
+  {check for multiple statements...}
+  if Assigned(pzTail) then
+    while pzTail^ <> #0 do
+    begin
+      if not (AnsiChar(pzTail^) in [' ', #9, #10, #13, ';']) then
+        raise ESqliteError.Create(STrailingSQL, -1);
+      Inc(pzTail);
+    end;
 end;
 
 destructor TSQLite3Statement.Destroy;
@@ -900,7 +1002,7 @@ end;
 function TSQLite3Statement.GetSqlParamByName(const ParamName: string): TSqlParam;
 begin
   Result.FStmt := Self;
-  Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, PUtf8(Utf8Encode(ParamName)));
+  Result.FParamIndex := sqlite3_bind_parameter_index(FHandle, Utf8Ptr(Utf8Encode(ParamName)));
 end;
 
 function TSQLite3Statement.GetSqlColumn(const ColumnIndex: integer): TSqlColumn;
@@ -918,7 +1020,6 @@ procedure TSQLite3Statement.BindParams(const Params: array of const);
   {nil = skip: leave existing binding untouched (NULL if never bound).
    BIND_NULL = explicitly bind NULL, replacing any previous binding...}
 begin
-  //Assert(High(Params) = sqlite3_bind_parameter_count(FHandle)-1, SParamCountMismatch);
   if High(Params) <> sqlite3_bind_parameter_count(FHandle)-1 then
     raise Exception.Create(SParamCountMismatch);
   {Reset and Bind all params...}
@@ -927,6 +1028,8 @@ begin
   begin
     var ASqlParam := GetSqlParam(i+1);
     case Params[i].VType of
+      vtBoolean:       ASqlParam.BindInt(Ord(Params[i].VBoolean));
+      vtCurrency:      ASqlParam.BindCurrency(Params[i].VCurrency^);
       vtWideString:    ASqlParam.BindText(string(PWideChar(Params[i].VWideString)));
       vtUnicodeString: ASqlParam.BindText(string(PWideChar(Params[i].VUnicodeString)));
       vtInteger:       ASqlParam.BindInt(Params[i].VInteger);
@@ -934,7 +1037,7 @@ begin
       vtInt64:         ASqlParam.BindInt64(Params[i].VInt64^);
       vtPointer:
         if Params[i].VPointer = nil then
-          {do nothing - intentional skip for reused statements}
+          {Do Nothing - intentional skip for reused statements}
         else if Params[i].VPointer = BIND_NULL then
           ASqlParam.BindNull
         else
@@ -945,10 +1048,10 @@ begin
   end;
 end;
 
-
 procedure TSQLite3Statement.BindParams(const Params: TArray<string>);
 begin
-  Assert(High(Params)+1 = sqlite3_bind_parameter_count(FHandle), SParamCountMismatch);
+  if High(Params) <> sqlite3_bind_parameter_count(FHandle)-1 then
+    raise Exception.Create(SParamCountMismatch);
 
   {Reset and BindText all params...}
   Reset;
@@ -986,15 +1089,46 @@ end;
 
 procedure TSQLite3Statement.Fetch(const FetchProc: TProc);
 begin
-  while Step = SQLITE_ROW do
-    FetchProc;
+  try
+    while Step = SQLITE_ROW do
+      FetchProc;
+  finally
+    sqlite3_reset(FHandle);
+  end;
+end;
+
+procedure TSQLite3Statement.Fetch(const FetchFunc: TFunc<Boolean>);
+begin
+  try
+    var DoContinue: Boolean := True;
+    while DoContinue and (Step = SQLITE_ROW) do
+      DoContinue := FetchFunc;
+  finally
+    sqlite3_reset(FHandle);
+  end;
 end;
 
 procedure TSQLite3Statement.BindAndFetch(const Params: array of const; const StepProc: TProc);
 begin
-  BindParams(Params);
-  while Step = SQLITE_ROW do
-    StepProc;
+  try
+    BindParams(Params);
+    while Step = SQLITE_ROW do
+      StepProc;
+  finally
+    sqlite3_reset(FHandle);
+  end;
+end;
+
+procedure TSQLite3Statement.BindAndFetch(const Params: array of const; const FetchFunc: TFunc<Boolean>);
+begin
+  try
+    var DoContinue: Boolean := True;
+    BindParams(Params);
+    while DoContinue and (Step = SQLITE_ROW) do
+      DoContinue := FetchFunc;
+  finally
+    sqlite3_reset(FHandle);
+  end;
 end;
 
 function TSQLite3Statement.SqlColumnCount: integer;
@@ -1010,17 +1144,13 @@ constructor TSqlite3BlobHandler.Create(OwnerDatabase: ISqlite3Database; const Ta
 begin
   FOwnerDatabase := OwnerDatabase;
   FOwnerDatabase.CheckHandle;
-  var PTable := PUtf8(Utf8Encode(Table));
-  var PColumn := PUtf8(Utf8Encode(Column));
-  FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, 'main', PTable, PColumn, RowID, Ord(WriteAccess), FHandle));
+  FOwnerDatabase.Check(sqlite3_blob_open(FOwnerDatabase.Handle, Utf8Ptr(MainSchema), Utf8Ptr(Utf8Encode(Table)), Utf8Ptr(Utf8Encode(Column)), RowID, Ord(WriteAccess), FHandle));
 end;
 
 destructor TSqlite3BlobHandler.Destroy;
 begin
   if Assigned(FHandle) then
-  begin
     sqlite3_blob_close(FHandle);
-  end;
   inherited;
 end;
 
@@ -1063,14 +1193,14 @@ end;
 class function TSqlite3.VersionStr: string;
 begin
   if FSqliteVersion = '' then
-    FSqliteVersion := Utf8ToString(sqlite3_libversion);
+    FSqliteVersion := Utf8ToStr(sqlite3_libversion);
   Result := FSqliteVersion;
 end;
 
 class function TSqlite3.CompileOptions: string;
 begin
   Result := '';
-  with OpenDatabase(MEMORY).Prepare('PRAGMA compile_options') do
+  with OpenDatabase(MEMORY_DB).Prepare('PRAGMA compile_options') do
     while Step = SQLITE_ROW do
       Result := Result + SqlColumn[0].AsText + #13#10;
 end;
@@ -1100,9 +1230,14 @@ begin
   Result := sqlite3_threadsafe <> 0;
 end;
 
+class function TSqlite3.CheckVersion: Boolean;
+begin
+  Result := CompareVersions(TSqlite3.VersionStr, MinVersion) >= 0;
+end;
+
 class function TSqlite3.AdfValueText(Value: PSqlite3Value): string;
 begin
-  Result := Utf8ToString(PUtf8(sqlite3_value_text(Value)));
+  Result := Utf8ToStr(sqlite3_value_text(Value));
 end;
 
 class function TSqlite3.AdfValueInt(Value: PSqlite3Value): integer;
@@ -1122,8 +1257,8 @@ end;
 
 class procedure TSqlite3.AdfResultText(Context: PSQLite3Context; Result: string);
 begin
-  var UResult := Utf8Encode(Result);
-  sqlite3_result_text(Context, PByte(UResult), Length(UResult), TSQLite3DestructorType(SQLITE_TRANSIENT));
+  var UResult: UTF8String := Utf8Encode(Result);
+  sqlite3_result_text(Context, Utf8Ptr(UResult), Length(UResult), TSQLite3DestructorType(SQLITE_TRANSIENT));
 end;
 
 class procedure TSqlite3.AdfResultInt(Context: PSQLite3Context; Result: integer);
@@ -1143,25 +1278,11 @@ end;
 
 {$ENDREGION}
 
-procedure _Abort(ErrMsg: string);
-begin
-  {$IFNDEF CONSOLE}
-  ShowMessage(ErrMsg);
-  Application.Terminate;
-  {$ELSE}
-  Writeln(ErrMsg);
-  ReadLn;
-  Halt(1);
-  {$ENDIF}
-end;
-
 Initialization
-begin
-  var MinVersion := '3.42.0';
-  if CompareVersions(TSqlite3.VersionStr, MinVersion) < 0 then
-    _Abort(Format('Sqlite3.dll Version %s or greater not found.  Application will terminate.', [MinVersion]));
-end;
 
-{$ENDREGION}
+Finalization
+begin
+  DB := nil; {This closes database with sqlite3_close_v2() which will closed all handles first, if any remain}
+end;
 
 End.

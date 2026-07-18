@@ -172,7 +172,7 @@ const
 begin
   {Create Database...}
   if USE_MEM_DB then
-    DB := TSqlite3.OpenDatabase(MEMORY)
+    DB := TSqlite3.OpenDatabase(MEMORY_DB)
   else
   begin
     DeleteFile(DbName);

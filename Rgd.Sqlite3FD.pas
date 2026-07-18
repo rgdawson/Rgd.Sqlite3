@@ -11,7 +11,7 @@ Interface
  *      - Embarcadero's own FireDAC unit, version 3.42.0 as of Delphi 12.3 and 13.
  *      - This is the only way to embed sqlite in a 32-bit app
  *      - Intended for comparison testing and for curiosity sake, I can't see why I would ever use this in production
- *
+ *      - I don't maintain this
  **************************************************************************************************************)
 
 {$ENDREGION}

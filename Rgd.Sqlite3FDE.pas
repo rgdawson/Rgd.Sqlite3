@@ -4,23 +4,21 @@ Interface
 
 {$REGION ' Comments '}
 
-(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * This is a variation of Rgd.Sqlite3.pas that links the Delphi FireDAC Encryption (FDE) version
- * FireDAC.Phys.SQLiteWrapper.FDEStat. This statically linked pre-built version of Sqlite3 is
- * version 3.31.1.  It last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC, which
- * is the encryption mechanism that FireDAC uses. It was removed Feb 7, 2020 as part of version 3.32.0.
- *
- * The approach taken here is to use a bit of FireDAC to create the connection (TFDConnection) to the
- * database including the password.  Once that is done we get the native PSqlite3 handle from
- * FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle and proceed as we do
- * in Rgd.Sqlite3.
- *
- * This was just an exercise in curiosity and to compare approaches.  At this point is makes
- * no sense to use this approach.  New development should usually just link to WinSqlite3.dll, or
- * if encryption is required, then link to Sqlite3mc.dll (Multi-Cipher version of Sqlite3)
- *
- * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
-
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+{ This is a variation of Rgd.Sqlite3.pas that links the Delphi FireDAC Encryption (FDE) version            }
+{ FireDAC.Phys.SQLiteWrapper.FDEStat. This statically linked pre-built version of Sqlite3 is               }
+{ version 3.31.1.  It last version of Sqlite3 to support the Compile Option SQLITE_HAS_CODEC, which        }
+{ is the encryption mechanism that FireDAC uses. It was removed Feb 7, 2020 as part of version 3.32.0.     }
+{                                                                                                          }
+{ The approach taken here is to use a bit of FireDAC to create the connection (TFDConnection) to the       }
+{ database including the password.  Once that is done we get the native PSqlite3 handle from               }
+{ FireDAC.Phys.SQLiteWrapper.TSqliteDatabase(FFDConnection.CliObj).Handle and proceed as we do             }
+{ in Rgd.Sqlite3.                                                                                          }
+{                                                                                                          }
+{ This was just an exercise in curiosity and to compare approaches.  At this point is makes                }
+{ no sense to use this approach.  New development should usually just link to Sqlite3.dll, winsqlite3.dll, }
+{ or if encryption is required, then link to Sqlite3mc.dll (Multi-Cipher version of Sqlite3)               }
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
 {$ENDREGION}
 
@@ -108,10 +106,10 @@ type
 
  {Column, Parameter Accessors...}
 
- (* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
-  * TSqlParam, TSqlColumn are not intended to be declared as variables. These are return values
-  * for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.
-  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+{ TSqlParam, TSqlColumn are not intended to be declared as variables. These are return values              }
+{ for SqlColumn and SqlParam. The intent is to support fluent style, such as SqlColumn[i].AsText.          }
+{~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
   TSqlParam = record
     [unsafe] FStmt: ISqlite3Statement;
@@ -233,30 +231,25 @@ type
     property OwnerDatabase: ISqlite3Database read GetOwnerDatabase;
   end;
 
-
-  (***********************************************************************************************
-   * ISqlite* Implementation classes...
-   ***********************************************************************************************)
-
   TSqlite3Database = class(TInterfacedObject, ISqlite3Database)
   private
     FFDConnection: TFDConnection;
     FHandle: PSqlite3;
     FFilename: string;
     FTransactionOpen: Boolean;
-    (***********************************************************************************************
-     * FYI: FireDAC.Phys.SQLiteWrapper.Stat does not export sqlite3_close_v2().  With SQLITE_FDSTATIC,
-     *      the TSqlite3Database object maintains a list of pointers to related ISqlite3Statement
-     *      and ISqlite3BlobHandler interfaces in order to close finalize any open Statements prior
-     *      to closing the database connection.  This is usually not the case, but sometimes it is
-     *      hard to control when an ISqlite3Statement goes out of scope and gets destroyed
-     *      due to how anonomous method variable capture and with statements will extend the
-     *      life of variables until the end of the current method. In such cases, for example,
-     *      calling DB.Close in the same method where an ISqlite3Statement is still in scope would
-     *      fail due to having an unfinalized Statement handle. DB.Close will go ahead and conveniently
-     *      finalize any unfinalized statement handles using this list prior to closing the database
-     *      connection to avoid this situation. This is not necessary when using sqlite_close_v2()
-     ***********************************************************************************************)
+     {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+     { FYI: FireDAC.Phys.SQLiteWrapper.Stat does not export sqlite3_close_v2().  With SQLITE_FDSTATIC,          }
+     {      the TSqlite3Database object maintains a list of pointers to related ISqlite3Statement               }
+     {      and ISqlite3BlobHandler interfaces in order to close finalize any open Statements prior             }
+     {      to closing the database connection.  This is usually not the case, but sometimes it is              }
+     {      hard to control when an ISqlite3Statement goes out of scope and gets destroyed                      }
+     {      due to how anonomous method variable capture and with statements will extend the                    }
+     {      life of variables until the end of the current method. In such cases, for example,                  }
+     {      calling DB.Close in the same method where an ISqlite3Statement is still in scope would              }
+     {      fail due to having an unfinalized Statement handle. DB.Close will go ahead and conveniently         }
+     {      finalize any unfinalized statement handles using this list prior to closing the database            }
+     {      connection to avoid this situation. This is not necessary when using sqlite_close_v2()              }
+     {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
     FStatementList: TList;
     FBlobHandlerList: TList;
   {Getters...}
@@ -333,13 +326,13 @@ type
   end;
 
   TSqlite3BlobHandler = class(TInterfacedObject, ISqlite3BlobHandler)
-  (***********************************************************************************************
-   * FYI: ISqliteBlobHandler is used for very large BLOBs where you want to be read/write directly
-   *      or incrementally. I have never used it, as I have not dealt with very large BLOBs.
-   *      To get a Blob Handler, you use the DB.BlobOpen method, but you need to kow RowID,
-   *      so, you cannot use this on tables that are defined WITHOUT ROWID. It is more common to
-   *      use regular TSqlParam.BindBlob() and TSqlCOlumn.AsBlob methods to set/get BLOBs.
-   ***********************************************************************************************)
+   {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+   { FYI: ISqliteBlobHandler is used for very large BLOBs where you want to be read/write directly            }
+   {      or incrementally. I have never used it, as I have not dealt with very large BLOBs.                  }
+   {      To get a Blob Handler, you use the DB.BlobOpen method, but you need to kow RowID,                   }
+   {      so, you cannot use this on tables that are defined WITHOUT ROWID. It is more common to              }
+   {      use regular TSqlParam.BindBlob() and TSqlCOlumn.AsBlob methods to set/get BLOBs.                    }
+   {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
   private
     FHandle: PSqlite3Blob;
     FOwnerDatabase: ISqlite3Database;
@@ -434,17 +427,17 @@ type
   TSQLite3AggregateFinalize = procedure(ctx: PSQLite3Context); cdecl;
   TSQLite3DestructorType    = procedure(p: Pointer); cdecl;
 
-(**************************************************************************************************************
- *  This is the subset of sqlite3 function definitions required to support this unit.
- *
- *  Statically via FireDAC.Phys.SQLiteWrapper.Stat, the Sqlite3 functions come from
- *  there.  I mimic these prototypes as defined in the FireDAC.Phys.SQLiteWrapper.Stat for consistency.
- *  FireDac likes to use PByte for text, so some additional typecasting is needed below.
- *  FireDAC param types:
- *    PByte (System.Types) = System.Byte = ^Byte
- *    PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar
- *    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar
- **************************************************************************************************************)
+ {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+ {  This is the subset of sqlite3 function definitions required to support this unit.                       }
+ {                                                                                                          }
+ {  Statically via FireDAC.Phys.SQLiteWrapper.Stat, the Sqlite3 functions come from                         }
+ {  there.  I mimic these prototypes as defined in the FireDAC.Phys.SQLiteWrapper.Stat for consistency.     }
+ {  FireDac likes to use PByte for text, so some additional typecasting is needed below.                    }
+ {  FireDAC param types:                                                                                    }
+ {    PByte (System.Types) = System.Byte = ^Byte                                                            }
+ {    PUtf8 (FiresDAC.Phys.SqliteCli) = PFDAnsiString = PAnsiChar                                           }
+ {    PFDAnsiChar (FireDAC.Stan.Intf) = PAnsiChar                                                           }
+ {~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
 
 {$ENDREGION}
 

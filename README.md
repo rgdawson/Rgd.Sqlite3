@@ -36,7 +36,7 @@ Query Patterns: (Take your pick, I tend to use Pattern 1 or 2, but I know some h
       {...}
     end);
 
-    {Pattern 2 - Stmt := DB.Prepare() and while Stmt.Step...}
+    {Pattern 3 - Stmt := DB.Prepare() and while Stmt.Step...}
     var
       Stmt: ISqlite3Statement;
     begin

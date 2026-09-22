@@ -12,9 +12,20 @@ Rgd.Sqlite3 for Delphi is implemented using interfaced objects and anonymous met
 for which I got by reading "Coding in Delphi" by Nick Hodges, plus some flexible goodies for
 binding and fetching data, and performing transactions.
 
-Query Patterns: (Take your pick, I tend to use Pattern 1, but I know some hate 'with' statements, so I have provided alternatives.)
+Query Patterns: (Take your pick, I tend to use Pattern 1 or 2, but I know some hate 'with' statements, so I have provided alternatives.)
 
-    {Pattern 1 - with DB.Prepare and Fetch(procedure)...}
+    {Pattern 1 - with DB. Prepare and while Step = SQLITE_ROW...}
+    with DB.Prepare(
+      'SELECT Name,' +
+      '       ID' +
+      '  FROM Tasks') do while Step = SQLITE_ROW do
+    begin
+      S0 := SqlColumn[0].AsText;
+      ID := SqlColumn[1].AsInt;
+      {...}
+    end);
+
+    {Pattern 2 - with DB.Prepare and Fetch(procedure)...}
     with DB.Prepare(
       'SELECT Name,' +
       '       ID' +
@@ -41,17 +52,6 @@ Query Patterns: (Take your pick, I tend to use Pattern 1, but I know some hate '
       end;
     end;
 
-    {Pattern 3 - DB.Fetch(SQL, procedure(const Stmt: ISQlite3Statement)...}
-    DB.Fetch(
-      'SELECT Name,' +
-      '       ID'    +
-      '  FROM Tasks', procedure(const Stmt: ISQlite3Statement)
-    begin
-      S0 := Stmt.SqlColumn[0].AsText;
-      ID := Stmt.SqlColumn[1].AsInt;
-      {...}
-    end);
-  
 Create Datatabase pattern...
     
     procedure TMainForm.CreateDatabase;
